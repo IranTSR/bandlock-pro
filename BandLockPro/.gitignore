@@ -1,0 +1,11 @@
+.gradle
+/build
+!/build.gradle.kts
+/app/build
+/app/src/main/cpp/build
+*.iml
+.idea
+local.properties
+.DS_Store
+*.apk
+*.so
