@@ -131,6 +131,27 @@
                 android:textStyle="bold"/>
         </LinearLayout>
 
+        <!-- Diagnostic Buttons -->
+        <Button
+            android:id="@+id/btnModemInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔍 DIAGNOSTIC: GET DEVICE CAP"
+            android:backgroundTint="#475569"
+            android:textColor="#f8fafc"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <Button
+            android:id="@+id/btnListMbns"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📜 LIST ALL MBN PROFILES"
+            android:backgroundTint="#475569"
+            android:textColor="#f8fafc"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"/>
+
         <!-- Logs -->
         <TextView
             android:id="@+id/tvLogs"

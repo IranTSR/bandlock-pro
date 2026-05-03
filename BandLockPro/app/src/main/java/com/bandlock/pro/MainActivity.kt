@@ -100,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         binding.btnLockB1B3B28N78.setOnClickListener { lockNrBands("n28+n78", "0x8000005", "B1+B3+B28+n28+n78") }
 
         binding.btnUnlock.setOnClickListener { unlockAll() }
+        binding.btnModemInfo.setOnClickListener { fetchModemInfo() }
+        binding.btnListMbns.setOnClickListener { fetchMbnList() }
     }
 
     private fun setupRefresh() {
@@ -145,6 +147,34 @@ class MainActivity : AppCompatActivity() {
                 binding.tvLogs.text = "❌ Unlock failed\nOUT: $out\nERR: $err"
             }
             handler.postDelayed({ updateSignalInfo() }, 1500)
+        }
+    }
+
+    private fun fetchModemInfo() {
+        if (qmiToolPath.isEmpty()) return
+        binding.tvLogs.text = "🔍 Fetching Modem Diagnostics..."
+        Shell.cmd("$qmiToolPath modem_info").submit { result ->
+            val out = result.out.joinToString("\n")
+            val err = result.err.joinToString("\n")
+            if (result.isSuccess) {
+                binding.tvLogs.text = "📊 DEVICE CAPABILITIES:\n$out"
+            } else {
+                binding.tvLogs.text = "❌ Diagnostic failed\nOUT: $out\nERR: $err"
+            }
+        }
+    }
+
+    private fun fetchMbnList() {
+        if (qmiToolPath.isEmpty()) return
+        binding.tvLogs.text = "📜 Scanning MBN Profiles..."
+        Shell.cmd("$qmiToolPath list_mbns").submit { result ->
+            val out = result.out.joinToString("\n")
+            val err = result.err.joinToString("\n")
+            if (result.isSuccess) {
+                binding.tvLogs.text = "📁 STORED MBNs:\n$out"
+            } else {
+                binding.tvLogs.text = "❌ MBN Scan failed\nOUT: $out\nERR: $err"
+            }
         }
     }
 
@@ -200,10 +230,12 @@ class MainActivity : AppCompatActivity() {
 
                     val lteBandsHex = prefs.optString("lte_bands", "")
                     val nrBandList = prefs.optJSONArray("nr_band_list")
-                    val hasN78 = prefs.optBoolean("has_n78", false)
+                    val modeName = prefs.optString("mode_name", "Unknown")
+                    val modeHex = prefs.optString("mode", "0x0")
 
                     if (lteBandsHex.isNotEmpty()) {
                         val lteMask = java.lang.Long.decode(lteBandsHex).toULong()
+                        val is5GEnabled = modeHex.contains("50") || modeHex.contains("5c") || modeHex.contains("40")
 
                         // Decode LTE bands
                         val lteBands = mutableListOf<String>()
@@ -224,29 +256,32 @@ class MainActivity : AppCompatActivity() {
 
                         // Decode NR bands
                         val nrBands = mutableListOf<String>()
-                        if (nrBandList != null) {
-                            for (i in 0 until nrBandList.length()) {
-                                nrBands.add(nrBandList.getString(i))
+                        if (is5GEnabled && nrBandList != null) {
+                            if (nrBandList.length() > 10) {
+                                nrBands.add("All NR")
+                            } else {
+                                for (i in 0 until nrBandList.length()) {
+                                    nrBands.add(nrBandList.getString(i))
+                                }
                             }
                         }
 
                         val isLteUnlocked = lteMask == ALL_BANDS_MASK || lteMask == 0xFFFFFFFFFFFFFFFFUL
-                        val hasNrLock = nrBands.isNotEmpty()
-
-                        if (isLteUnlocked && !hasNrLock) {
-                            runOnUiThread {
+                        val isNrUnlocked = nrBandList != null && nrBandList.length() > 10
+                        
+                        runOnUiThread {
+                            if (isLteUnlocked && isNrUnlocked && modeName.contains("GSM")) {
                                 binding.tvLockState.text = "🔓 UNLOCKED (All Bands)"
-                                binding.tvLockState.setTextColor(0xFF10B981.toInt())
-                            }
-                        } else {
-                            val allBands = mutableListOf<String>()
-                            if (!isLteUnlocked) allBands.addAll(lteBands)
-                            allBands.addAll(nrBands)
-                            val label = allBands.joinToString(" + ")
-
-                            val color = if (hasNrLock) 0xFF06B6D4.toInt() else 0xFFFBBF24.toInt()
-                            runOnUiThread {
-                                binding.tvLockState.text = "🔒 LOCKED: $label"
+                                binding.tvLockState.setTextColor(0xFF10B981.toInt()) // emerald
+                            } else {
+                                val allBands = mutableListOf<String>()
+                                if (!isLteUnlocked) allBands.addAll(lteBands)
+                                if (is5GEnabled) allBands.addAll(nrBands)
+                                
+                                val label = if (allBands.isEmpty()) "NONE" else allBands.joinToString(" + ")
+                                binding.tvLockState.text = "🔒 $modeName: $label"
+                                
+                                val color = if (is5GEnabled && !isNrUnlocked) 0xFF06B6D4.toInt() else 0xFFFBBF24.toInt()
                                 binding.tvLockState.setTextColor(color)
                             }
                         }

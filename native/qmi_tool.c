@@ -8,6 +8,40 @@
 static uint16_t g_txn = 1;
 static int g_sock = -1;
 static struct sockaddr_qrtr g_nas_addr;
+static struct sockaddr_qrtr g_dms_addr;
+
+static int qrtr_lookup_dms(int sock, struct sockaddr_qrtr *out) {
+    struct qrtr_ctrl_pkt pkt;
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.cmd = QRTR_TYPE_NEW_LOOKUP;
+    pkt.service = QMI_SERVICE_DMS;
+    pkt.instance = 0;
+
+    struct sockaddr_qrtr ctrl = {
+        .sq_family = AF_QIPCRTR,
+        .sq_node = 1,
+        .sq_port = QRTR_PORT_CTRL
+    };
+
+    if (sendto(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&ctrl, sizeof(ctrl)) < 0) return -1;
+
+    struct pollfd pfd = { .fd = sock, .events = POLLIN };
+    if (poll(&pfd, 1, 1000) <= 0) return -1;
+
+    uint8_t buf[256];
+    int n = recv(sock, buf, sizeof(buf), 0);
+    if (n < 20) return -1;
+
+    uint32_t cmd = get_le32(buf);
+    uint32_t svc = get_le32(buf + 4);
+    if (cmd == QRTR_TYPE_NEW_SERVER && svc == QMI_SERVICE_DMS) {
+        out->sq_family = AF_QIPCRTR;
+        out->sq_node = get_le32(buf + 12);
+        out->sq_port = get_le32(buf + 16);
+        return 0;
+    }
+    return -1;
+}
 
 /* ---- QRTR Layer ---- */
 
@@ -140,23 +174,19 @@ static int qmi_recv(int sock, uint16_t exp_msg_id,
             continue;
         }
 
-        /* Check result TLV */
         const uint8_t *data = buf + 7;
+        if (tlv_out && tlv_len_out) {
+            int copy = (msg_len < MSG_BUF_SIZE) ? msg_len : MSG_BUF_SIZE;
+            memcpy(tlv_out, data, copy);
+            *tlv_len_out = copy;
+        }
+
+        /* Check result TLV */
         uint16_t rlen;
         const uint8_t *res = find_tlv(data, msg_len, 0x02, &rlen);
         if (res && rlen >= 4) {
             uint16_t result = get_le16(res);
-            uint16_t error = get_le16(res + 2);
-            if (result != 0) {
-                fprintf(stderr, "ERROR: QMI error result=%d error=%d\n", result, error);
-                return -1;
-            }
-        }
-
-        if (tlv_out && tlv_len_out) {
-            int copy = msg_len < MSG_BUF_SIZE ? msg_len : MSG_BUF_SIZE;
-            memcpy(tlv_out, data, copy);
-            *tlv_len_out = copy;
+            if (result != 0) return -1;
         }
         return 0;
     }
@@ -167,10 +197,25 @@ static int qmi_init(void) {
     if (g_sock < 0) return -1;
     if (qrtr_lookup_nas(g_sock, &g_nas_addr) < 0) {
         close(g_sock);
+        g_sock = -1;
         return -1;
     }
-    // Silent init for clean JSON output
+    qrtr_lookup_dms(g_sock, &g_dms_addr); // DMS is optional for most things, but needed for force-lock
     return 0;
+}
+
+static int dms_set_operating_mode(uint8_t mode) {
+    if (g_dms_addr.sq_port == 0) return -1;
+    uint8_t tlv[16];
+    int pos = 0;
+    put_u8(tlv, &pos, 0x01); // Mode TLV
+    put_le16(tlv, &pos, 1);
+    put_u8(tlv, &pos, mode);
+
+    qmi_send(g_sock, &g_dms_addr, QMI_DMS_SET_OPERATING_MODE, tlv, pos);
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    return qmi_recv(g_sock, QMI_DMS_SET_OPERATING_MODE, resp, &rlen, 2000);
 }
 
 /* ---- Commands ---- */
@@ -293,75 +338,122 @@ static int cmd_cell_info(void) {
 
 static int cmd_get_pref(void) {
     if (qmi_init() < 0) return 1;
+
     qmi_send(g_sock, &g_nas_addr, QMI_NAS_GET_SYS_SEL_PREF, NULL, 0);
     uint8_t resp[MSG_BUF_SIZE];
     int rlen = 0;
-    if (qmi_recv(g_sock, QMI_NAS_GET_SYS_SEL_PREF, resp, &rlen, 5000) < 0) {
-        close(g_sock);
+    int rc = qmi_recv(g_sock, QMI_NAS_GET_SYS_SEL_PREF, resp, &rlen, 5000);
+
+    if (rc == 0) {
+        printf("{\"get_pref_tlvs\":[\n");
+        int pos = 7; // Skip QMI header
+        int first = 1;
+        while (pos + 3 <= rlen) {
+            uint8_t type = resp[pos];
+            uint16_t len = get_le16(resp + pos + 1);
+            pos += 3;
+            if (pos + len > rlen) break;
+
+            if (!first) printf(",\n");
+            printf("  {\"id\":\"0x%02X\", \"len\":%d, \"hex\":\"", type, len);
+            for (int i = 0; i < len; i++) printf("%02X", resp[pos + i]);
+            printf("\"}");
+            
+            pos += len;
+            first = 0;
+        }
+        printf("\n]}\n");
+    } else {
+        printf("{\"result\":\"FAILED\", \"error\":%d}\n", rc);
+    }
+
+    close(g_sock);
+    return rc;
+}
+
+static int cmd_modem_info(void) {
+    int qsock = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+    struct sockaddr_qrtr addr;
+    if (qrtr_lookup_dms(qsock, &addr) < 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"DMS not found\"}\n");
+        close(qsock);
         return 1;
     }
-    printf("{\"preferences\":{");
-    uint16_t tlen;
-    const uint8_t *t;
 
-    t = find_tlv(resp, rlen, TLV_MODE_PREF, &tlen);
-    if (t && tlen >= 2)
-        printf("\"mode\":\"0x%04x\"", get_le16(t));
-
-    t = find_tlv(resp, rlen, TLV_LTE_BAND_PREF, &tlen);
-    if (t && tlen >= 8)
-        printf(",\"lte_bands\":\"0x%016llx\"", (unsigned long long)get_le64(t));
-
-    /* NR5G band preference — read full extended bitmask */
-    t = find_tlv(resp, rlen, TLV_NR5G_BAND_PREF, &tlen);
-    if (t && tlen > 0) {
-        /* Print first 8 bytes as hex for backward compat */
-        if (tlen >= 8)
-            printf(",\"nr_bands\":\"0x%016llx\"", (unsigned long long)get_le64(t));
-        /* Print human-readable NR band list */
-        printf(",\"nr_band_list\":[");
-        int first = 1;
-        for (int b = 1; b <= (int)(tlen * 8) && b <= 512; b++) {
-            int byte_idx = (b - 1) / 8;
-            int bit_idx = (b - 1) % 8;
-            if (byte_idx < tlen && (t[byte_idx] >> bit_idx) & 1) {
-                if (!first) printf(",");
-                printf("\"n%d\"", b);
-                first = 0;
-            }
-        }
-        printf("]");
-        /* Check specific important NR bands */
-        if (tlen >= 4) {
-            /* n28 = bit 27 = byte 3, bit 3 */
-            int has_n28 = (t[3] >> 3) & 1;
-            printf(",\"has_n28\":%s", has_n28 ? "true" : "false");
-        }
-        if (tlen >= 6) {
-            /* n41 = bit 40 = byte 5, bit 0 */
-            int has_n41 = (t[5] >> 0) & 1;
-            printf(",\"has_n41\":%s", has_n41 ? "true" : "false");
-        }
-        if (tlen >= 10) {
-            /* n78 = bit 77 = byte 9, bit 5 */
-            int has_n78 = (t[9] >> 5) & 1;
-            printf(",\"has_n78\":%s", has_n78 ? "true" : "false");
+    /* Get MCFG Config ID (Active MBN) */
+    qmi_send(qsock, &addr, QMI_DMS_GET_MCFG_CONFIG_ID, NULL, 0);
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    char mbn_name[256] = "Unknown";
+    if (qmi_recv(qsock, QMI_DMS_GET_MCFG_CONFIG_ID, resp, &rlen, 2000) == 0) {
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen); // Active Config ID
+        if (t && tlen > 2) {
+            int name_len = tlen - 2;
+            if (name_len > 255) name_len = 255;
+            memcpy(mbn_name, t + 2, name_len);
+            mbn_name[name_len] = 0;
         }
     }
 
-    t = find_tlv(resp, rlen, TLV_NET_SEL_PREF, &tlen);
-    if (t && tlen >= 1)
-        printf(",\"net_sel\":%d", t[0]);
+    /* Get Capabilities */
+    qmi_send(qsock, &addr, QMI_DMS_GET_DEVICE_CAPABILITIES, NULL, 0);
+    rlen = 0;
+    int has_5g = 0;
+    if (qmi_recv(qsock, QMI_DMS_GET_DEVICE_CAPABILITIES, resp, &rlen, 2000) == 0) {
+        printf("{\"raw_capabilities\":\"");
+        for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
+        printf("\"}\n");
 
-    printf("}}\n");
-    close(g_sock);
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x11, &tlen); // RAT capabilities
+        if (t && tlen > 0) {
+            for (int i = 0; i < tlen; i++) if (t[i] == 0x05) has_5g = 1; // 0x05 = NR5G
+        }
+    }
+
+    printf("{\"active_mbn\":\"%s\", \"nr5g_supported\":%s}\n", 
+           mbn_name, has_5g ? "true" : "false");
+    close(qsock);
     return 0;
 }
 
-/*
- * Parse a single NR band token: "n78", "78", "n28", etc.
- * Returns band number (1-512) or 0 on failure.
- */
+static int cmd_list_mbns(void) {
+    int qsock = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+    struct sockaddr_qrtr addr;
+    if (qrtr_lookup_dms(qsock, &addr) < 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"DMS not found\"}\n");
+        close(qsock); return 1;
+    }
+
+    /* List Configs (0x0041) */
+    uint8_t payload[1] = { 0x01 }; // Config type: SW
+    qmi_send(qsock, &addr, QMI_DMS_LIST_CONFIGS, payload, 1);
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    if (qmi_recv(qsock, QMI_DMS_LIST_CONFIGS, resp, &rlen, 3000) == 0) {
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen); // Config List
+        if (t && tlen > 0) {
+            int num_configs = t[0];
+            printf("{\"mbn_list\":[");
+            const uint8_t *p = t + 1;
+            for (int i = 0; i < num_configs; i++) {
+                int name_len = *p++;
+                char name[256];
+                if (name_len > 255) name_len = 255;
+                memcpy(name, p, name_len);
+                name[name_len] = 0;
+                p += name_len;
+                uint8_t active = *p++;
+                printf("%s{\"name\":\"%s\",\"active\":%s}", i > 0 ? "," : "", name, active ? "true" : "false");
+            }
+            printf("]}\n");
+        }
+    }
+    close(qsock);
+    return 0;
+}
 static int parse_nr_band_token(const char *tok) {
     const char *numstr = tok;
     /* Strip leading 'n' or 'N' prefix if present */
@@ -489,7 +581,11 @@ static int cmd_band_lock(const char *lte_str, const char *nr_str) {
         }
         printf("]}\n");
     } else {
-        printf("{\"result\":\"FAILED\"}\n");
+        uint16_t qmi_err = 0;
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x02, &tlen);
+        if (t && tlen >= 4) qmi_err = get_le16(t + 2);
+        printf("{\"result\":\"FAILED\",\"error\":%d}\n", qmi_err);
     }
 
     close(g_sock);
@@ -501,75 +597,87 @@ static int cmd_band_lock(const char *lte_str, const char *nr_str) {
  * nr_spec: NR band specification (e.g., "n78", "n28,n78", "n28+n78")
  * lte_str: Optional LTE band hex mask. If NULL, defaults to MY_LTE_ALL.
  */
+typedef struct {
+    uint32_t node;
+    uint32_t port;
+} qmi_endpoint_t;
+
+static int qrtr_lookup_all_nas(qmi_endpoint_t *endpoints, int max_eps) {
+    int sock = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+    if (sock < 0) return -1;
+
+    struct sockaddr_qrtr sq = { .sq_family = AF_QIPCRTR, .sq_node = 1, .sq_port = QRTR_PORT_CTRL };
+    struct qrtr_ctrl_pkt pkt = { .cmd = QRTR_TYPE_NEW_LOOKUP, .service = QMI_SERVICE_NAS, .instance = 0, .node = 0, .port = 0 };
+
+    if (sendto(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&sq, sizeof(sq)) < 0) {
+        close(sock);
+        return -1;
+    }
+
+    int count = 0;
+    struct pollfd pfd = { .fd = sock, .events = POLLIN };
+    while (count < max_eps && poll(&pfd, 1, 500) > 0) {
+        struct qrtr_ctrl_pkt resp;
+        if (recv(sock, &resp, sizeof(resp), 0) != sizeof(resp)) break;
+        if (resp.cmd == QRTR_TYPE_NEW_SERVER) {
+            endpoints[count].node = resp.node;
+            endpoints[count].port = resp.port;
+            count++;
+        }
+    }
+    close(sock);
+    return count;
+}
+
 static int cmd_nr_lock(const char *nr_spec, const char *lte_str) {
-    if (qmi_init() < 0) return 1;
+    qmi_endpoint_t endpoints[8];
+    int num_eps = qrtr_lookup_all_nas(endpoints, 8);
+    if (num_eps <= 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"No NAS service found\"}\n");
+        return 1;
+    }
 
-    uint64_t lte_mask = lte_str ? strtoull(lte_str, NULL, 0) : MY_LTE_ALL;
-
+    uint64_t lte_mask = lte_str ? strtoull(lte_str, NULL, 0) : 0x0011e7ffffdf3fffULL;
     uint8_t nr_mask[NR5G_MASK_BYTES];
     memset(nr_mask, 0, sizeof(nr_mask));
     parse_nr_bands(nr_spec, nr_mask);
 
-    if (nr5g_mask_is_zero(nr_mask)) {
-        fprintf(stderr, "Error: No valid NR bands in '%s'\n", nr_spec);
-        close(g_sock);
-        return 1;
-    }
-
-    uint8_t tlv[256];
+    uint8_t tlv[512];
     int pos = 0;
+    put_u8(tlv, &pos, 0x11); put_le16(tlv, &pos, 2); put_le16(tlv, &pos, 0x50); // Mode
+    put_u8(tlv, &pos, 0x15); put_le16(tlv, &pos, 8); put_le64(tlv, &pos, lte_mask); // LTE
+    put_u8(tlv, &pos, 0x6C); put_le16(tlv, &pos, 16); memcpy(tlv+pos, nr_mask, 16); pos+=16; // NR
+    put_u8(tlv, &pos, 0x74); put_le16(tlv, &pos, 1); put_u8(tlv, &pos, 0x01); // Xiaomi Enabler 1
+    put_u8(tlv, &pos, 0x76); put_le16(tlv, &pos, 1); put_u8(tlv, &pos, 0x01); // Xiaomi Enabler 2
+    put_u8(tlv, &pos, 0x1A); put_le16(tlv, &pos, 1); put_u8(tlv, &pos, 0x01); // Permanent
 
-    /* TLV 0x11: Mode - LTE + NR5G */
-    uint16_t mode = MODE_LTE | MODE_NR5G;
-    put_u8(tlv, &pos, TLV_MODE_PREF);
-    put_le16(tlv, &pos, 2);
-    put_le16(tlv, &pos, mode);
-
-    /* TLV 0x15: LTE bands */
-    put_u8(tlv, &pos, TLV_LTE_BAND_PREF);
-    put_le16(tlv, &pos, 8);
-    put_le64(tlv, &pos, lte_mask);
-
-    /* TLV 0x2C: NR5G bands — size dynamically based on highest set bit */
-    int nr_len = NR5G_MASK_BYTES;
-    while (nr_len > 16 && nr_mask[nr_len - 1] == 0) nr_len--;
-    nr_len = ((nr_len + 7) / 8) * 8; /* 8-byte align */
-    put_u8(tlv, &pos, TLV_NR5G_BAND_PREF);
-    put_le16(tlv, &pos, nr_len);
-    memcpy(tlv + pos, nr_mask, nr_len);
-    pos += nr_len;
-
-    qmi_send(g_sock, &g_nas_addr, QMI_NAS_SET_SYS_SEL_PREF, tlv, pos);
-    uint8_t resp[MSG_BUF_SIZE];
-    int rlen = 0;
-    int rc = qmi_recv(g_sock, QMI_NAS_SET_SYS_SEL_PREF, resp, &rlen, 5000);
-
-    if (rc == 0) {
-        printf("{\"result\":\"OK\",\"lte_bands\":\"0x%llx\"",
-               (unsigned long long)lte_mask);
-        printf(",\"locked_bands\":[");
-        int f = 1;
-        for (int b = 1; b <= 64; b++) {
-            if (lte_mask & LTE_BAND(b)) {
-                if (!f) printf(",");
-                printf("\"B%d\"", b);
-                f = 0;
-            }
+    printf("{\"nodes\":[\n");
+    int success = 0;
+    for (int i = 0; i < num_eps; i++) {
+        int s = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+        struct sockaddr_qrtr addr = { .sq_family = AF_QIPCRTR, .sq_node = endpoints[i].node, .sq_port = endpoints[i].port };
+        qmi_send(s, &addr, QMI_NAS_SET_SYS_SEL_PREF, tlv, pos);
+        
+        uint8_t resp[MSG_BUF_SIZE];
+        int rlen = 0;
+        int rc = qmi_recv(s, QMI_NAS_SET_SYS_SEL_PREF, resp, &rlen, 2000);
+        
+        uint16_t qmi_err = 0;
+        if (rc != 0) {
+            uint16_t tlen;
+            const uint8_t *t = find_tlv(resp, rlen, 0x02, &tlen);
+            if (t && tlen >= 4) qmi_err = get_le16(t + 2);
+        } else {
+            success = 1;
         }
-        for (int b = 1; b <= NR5G_MASK_BYTES * 8; b++) {
-            if (nr5g_mask_has_band(nr_mask, b)) {
-                if (!f) printf(",");
-                printf("\"n%d\"", b);
-                f = 0;
-            }
-        }
-        printf("]}\n");
-    } else {
-        printf("{\"result\":\"FAILED\"}\n");
+
+        if (i > 0) printf(",\n");
+        printf("  {\"node\":%d, \"port\":%d, \"rc\":%d, \"error\":%d}", 
+               endpoints[i].node, endpoints[i].port, rc, qmi_err);
+        close(s);
     }
-
-    close(g_sock);
-    return rc;
+    printf("\n], \"result\":\"%s\"}\n", success ? "OK" : "FAILED");
+    return success ? 0 : 1;
 }
 
 static int cmd_unlock(void) {
@@ -578,16 +686,18 @@ static int cmd_unlock(void) {
     uint8_t tlv[128];
     int pos = 0;
 
-    /* Mode: all technologies (LTE + NR5G + others) */
-    uint16_t mode = 0x005c | MODE_NR5G;
+    /* Mode: LTE + NR5G + others to prevent rejection */
+    uint16_t mode = 0x5c;
     put_u8(tlv, &pos, TLV_MODE_PREF);
     put_le16(tlv, &pos, 2);
     put_le16(tlv, &pos, mode);
 
-    /* LTE: all supported bands (from get_pref: 0x0011e7ffffdf3fff) */
+    /* LTE: all supported bands */
     put_u8(tlv, &pos, TLV_LTE_BAND_PREF);
     put_le16(tlv, &pos, 8);
     put_le64(tlv, &pos, 0x0011e7ffffdf3fffULL);
+
+    /* Note: We omit TLV_NR5G_BAND_PREF to let the modem revert to default (All Bands) */
 
     qmi_send(g_sock, &g_nas_addr, QMI_NAS_SET_SYS_SEL_PREF, tlv, pos);
     uint8_t resp[MSG_BUF_SIZE];
@@ -600,6 +710,25 @@ static int cmd_unlock(void) {
 }
 
 /* ---- Usage & Main ---- */
+
+static int cmd_get_nr_pref(void) {
+    if (qmi_init() < 0) return 1;
+    qmi_send(g_sock, &g_nas_addr, QMI_NAS_GET_NR5G_BAND_PREF, NULL, 0);
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    int rc = qmi_recv(g_sock, QMI_NAS_GET_NR5G_BAND_PREF, resp, &rlen, 5000);
+    if (rc == 0) {
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen);
+        printf("{\"nr_pref_status\":\"OK\",\"tlv_0x01_len\":%d", tlen);
+        if (t && tlen >= 8) printf(",\"mask_0\":\"0x%016llx\"", (unsigned long long)get_le64(t));
+        printf("}\n");
+    } else {
+        printf("{\"nr_pref_status\":\"FAILED\"}\n");
+    }
+    close(g_sock);
+    return rc;
+}
 
 static void usage(void) {
     printf(
@@ -649,8 +778,14 @@ int main(int argc, char **argv) {
         return cmd_test();
     if (strcmp(cmd, "cell_info") == 0)
         return cmd_cell_info();
+    if (strcmp(cmd, "modem_info") == 0)
+        return cmd_modem_info();
+    if (strcmp(cmd, "list_mbns") == 0)
+        return cmd_list_mbns();
     if (strcmp(cmd, "get_pref") == 0)
         return cmd_get_pref();
+    if (strcmp(cmd, "get_nr_pref") == 0)
+        return cmd_get_nr_pref();
     if (strcmp(cmd, "band_lock") == 0) {
         if (argc < 3) { fprintf(stderr, "Usage: qmi_tool band_lock <lte_mask> [nr_bands]\n"); return 1; }
         return cmd_band_lock(argv[2], argc > 3 ? argv[3] : NULL);

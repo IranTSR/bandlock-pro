@@ -72,6 +72,8 @@ struct qmi_result {
 #define QMI_NAS_GET_SYS_SEL_PREF        0x0034
 #define QMI_NAS_GET_CELL_LOCATION_INFO   0x0043
 #define QMI_NAS_GET_SIGNAL_INFO          0x004F
+#define QMI_NAS_GET_NR5G_BAND_PREF       0x00D3
+#define QMI_NAS_SET_NR5G_BAND_PREF       0x00D4
 
 /* SET_SYS_SEL_PREF TLV types */
 #define TLV_MODE_PREF       0x11
@@ -136,9 +138,18 @@ static inline int nr5g_mask_is_zero(const uint8_t *mask) {
 #define MY_LTE_B3   LTE_BAND(3)
 #define MY_LTE_B7   LTE_BAND(7)
 #define MY_LTE_B8   LTE_BAND(8)
-#define MY_LTE_B28  LTE_BAND(28)
-#define MY_LTE_B40  LTE_BAND(40)
-#define MY_LTE_ALL  (MY_LTE_B1|MY_LTE_B3|MY_LTE_B7|MY_LTE_B8|MY_LTE_B28|MY_LTE_B40)
+#define QMI_NAS_SET_NR5G_BAND_PREF    0x00D4
+#define QMI_NAS_GET_NR5G_BAND_PREF    0x00D3
+
+#define QMI_SERVICE_DMS               0x02
+#define QMI_DMS_GET_DEVICE_CAPABILITIES  0x0022
+#define QMI_DMS_SET_OPERATING_MODE    0x002E
+#define QMI_DMS_LIST_CONFIGS             0x0041
+#define QMI_DMS_GET_MCFG_CONFIG_ID       0x0042
+#define QMI_DMS_SET_CONFIG_STATE         0x0043
+
+/* Original working combination from user's get_pref: B1, B3, B7, B8, B20, B28, B38, B40, B41, etc. */
+#define MY_LTE_ALL  0x0011e7ffffdf3fffULL
 
 /* Malaysia NR5G bands */
 #define MY_NR_N28   28  /* 700 MHz  — low-band 5G (coverage/anchor) */
