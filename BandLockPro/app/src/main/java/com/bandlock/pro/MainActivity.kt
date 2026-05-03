@@ -84,11 +84,20 @@ class MainActivity : AppCompatActivity() {
         binding.btnLockB1B3B7.setOnClickListener { lockBand("0x45", "B1+B3+B7") }
         binding.btnLockB1B3B28.setOnClickListener { lockBand("0x8000005", "B1+B3+B28") }
 
-        // 5G NR bands
-        binding.btnLockN78.setOnClickListener { lockBandN78(null, "n78") }
-        binding.btnLockB3N78.setOnClickListener { lockBandN78("0x4", "B3+n78") }
-        binding.btnLockB1B3N78.setOnClickListener { lockBandN78("0x5", "B1+B3+n78") }
-        binding.btnLockB1B3B28N78.setOnClickListener { lockBandN78("0x8000005", "B1+B3+B28+n78") }
+        // 5G NR single bands
+        binding.btnLockN28.setOnClickListener { lockNrBands("n28", null, "n28") }
+        binding.btnLockN41.setOnClickListener { lockNrBands("n41", null, "n41") }
+        binding.btnLockN78.setOnClickListener { lockNrBands("n78", null, "n78") }
+
+        // NR Carrier Aggregation combos
+        binding.btnLockN28N78.setOnClickListener { lockNrBands("n28+n78", null, "n28+n78") }
+        binding.btnLockN41N78.setOnClickListener { lockNrBands("n41+n78", null, "n41+n78") }
+        binding.btnLockN28N41N78.setOnClickListener { lockNrBands("n28+n41+n78", null, "n28+n41+n78") }
+
+        // LTE + NR combos
+        binding.btnLockB3N78.setOnClickListener { lockNrBands("n78", "0x4", "B3+n78") }
+        binding.btnLockB3N28N78.setOnClickListener { lockNrBands("n28+n78", "0x4", "B3+n28+n78") }
+        binding.btnLockB1B3B28N78.setOnClickListener { lockNrBands("n28+n78", "0x8000005", "B1+B3+B28+n28+n78") }
 
         binding.btnUnlock.setOnClickListener { unlockAll() }
     }
@@ -139,17 +148,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Lock to NR n78 with optional LTE bands using the dedicated band_lock_n78 command */
-    private fun lockBandN78(lteMask: String?, label: String) {
+    /** Lock to NR bands (with optional LTE bands) using the general nr_lock command.
+     *  Supports NR-CA: "n28+n78", "n28,n78", "n41+n78", etc. */
+    private fun lockNrBands(nrSpec: String, lteMask: String?, label: String) {
         if (qmiToolPath.isEmpty()) {
             binding.tvLogs.text = "Error: Engine not found"
             return
         }
         binding.tvLogs.text = "Locking to $label (5G NR)..."
         val cmd = if (lteMask != null) {
-            "$qmiToolPath band_lock_n78 $lteMask"
+            "$qmiToolPath nr_lock $nrSpec $lteMask"
         } else {
-            "$qmiToolPath band_lock_n78"
+            "$qmiToolPath nr_lock $nrSpec"
         }
         Shell.cmd(cmd).submit { result ->
             val out = result.out.joinToString("\n")

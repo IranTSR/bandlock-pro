@@ -141,7 +141,9 @@ static inline int nr5g_mask_is_zero(const uint8_t *mask) {
 #define MY_LTE_ALL  (MY_LTE_B1|MY_LTE_B3|MY_LTE_B7|MY_LTE_B8|MY_LTE_B28|MY_LTE_B40)
 
 /* Malaysia NR5G bands */
-#define MY_NR_N78   78  /* 3500 MHz (3.5 GHz) — primary 5G band in Malaysia */
+#define MY_NR_N28   28  /* 700 MHz  — low-band 5G (coverage/anchor) */
+#define MY_NR_N41   41  /* 2500 MHz — mid-band 5G (TDD) */
+#define MY_NR_N78   78  /* 3500 MHz — primary 5G band in Malaysia */
 
 /* Buffer helpers */
 #define MSG_BUF_SIZE 4096

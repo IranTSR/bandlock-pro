@@ -331,7 +331,17 @@ static int cmd_get_pref(void) {
             }
         }
         printf("]");
-        /* Check specific important bands */
+        /* Check specific important NR bands */
+        if (tlen >= 4) {
+            /* n28 = bit 27 = byte 3, bit 3 */
+            int has_n28 = (t[3] >> 3) & 1;
+            printf(",\"has_n28\":%s", has_n28 ? "true" : "false");
+        }
+        if (tlen >= 6) {
+            /* n41 = bit 40 = byte 5, bit 0 */
+            int has_n41 = (t[5] >> 0) & 1;
+            printf(",\"has_n41\":%s", has_n41 ? "true" : "false");
+        }
         if (tlen >= 10) {
             /* n78 = bit 77 = byte 9, bit 5 */
             int has_n78 = (t[9] >> 5) & 1;
@@ -349,34 +359,63 @@ static int cmd_get_pref(void) {
 }
 
 /*
- * Parse NR band arguments: supports individual band numbers (e.g., "78")
- * or the special keyword "n78". Sets bits in the extended mask.
+ * Parse a single NR band token: "n78", "78", "n28", etc.
+ * Returns band number (1-512) or 0 on failure.
+ */
+static int parse_nr_band_token(const char *tok) {
+    const char *numstr = tok;
+    /* Strip leading 'n' or 'N' prefix if present */
+    if ((tok[0] == 'n' || tok[0] == 'N') && tok[1] >= '0' && tok[1] <= '9')
+        numstr = tok + 1;
+    int band = atoi(numstr);
+    return (band > 0 && band <= 512) ? band : 0;
+}
+
+/*
+ * Parse NR band arguments into extended bitmask.
+ * Supports:
+ *   "n78"         - single band with prefix
+ *   "78"          - single band number
+ *   "n28,n78"     - comma-separated with prefix
+ *   "28,78"       - comma-separated numbers
+ *   "n28+n78"     - plus-separated (NR-CA notation)
+ *   "0x1234"      - hex bitmask (legacy, covers n1-n64 only)
  */
 static void parse_nr_bands(const char *spec, uint8_t *nr_mask) {
-    /* Check for keyword "n78" or just "78" */
-    if (strcmp(spec, "n78") == 0 || strcmp(spec, "78") == 0) {
-        nr5g_mask_set_band(nr_mask, 78);
+    /* Check for comma or plus separators first */
+    if (strchr(spec, ',') || strchr(spec, '+')) {
+        char *tmp = strdup(spec);
+        /* Replace '+' with ',' for uniform tokenizing */
+        for (char *p = tmp; *p; p++) {
+            if (*p == '+') *p = ',';
+        }
+        char *tok = strtok(tmp, ",");
+        while (tok) {
+            /* Skip whitespace */
+            while (*tok == ' ') tok++;
+            int band = parse_nr_band_token(tok);
+            if (band > 0)
+                nr5g_mask_set_band(nr_mask, band);
+            tok = strtok(NULL, ",");
+        }
+        free(tmp);
         return;
     }
+
+    /* Try as single band token: "n78", "78", "n28", etc. */
+    int band = parse_nr_band_token(spec);
+    if (band > 0) {
+        nr5g_mask_set_band(nr_mask, band);
+        return;
+    }
+
     /* Try as hex bitmask (legacy: only covers n1-n64) */
     char *endptr;
     uint64_t val = strtoull(spec, &endptr, 0);
     if (*endptr == '\0' && val != 0) {
-        /* Write 64-bit value into first 8 bytes of mask (LE) */
         for (int i = 0; i < 8; i++)
             nr_mask[i] = (val >> (i * 8)) & 0xFF;
-        return;
     }
-    /* Try as comma-separated band list: "1,78,257" */
-    char *tmp = strdup(spec);
-    char *tok = strtok(tmp, ",");
-    while (tok) {
-        int band = atoi(tok);
-        if (band > 0 && band <= 512)
-            nr5g_mask_set_band(nr_mask, band);
-        tok = strtok(NULL, ",");
-    }
-    free(tmp);
 }
 
 static int cmd_band_lock(const char *lte_str, const char *nr_str) {
@@ -457,15 +496,25 @@ static int cmd_band_lock(const char *lte_str, const char *nr_str) {
     return rc;
 }
 
-/* Lock to LTE bands + NR n78 in a single command */
-static int cmd_band_lock_n78(const char *lte_str) {
+/*
+ * General NR5G band lock command.
+ * nr_spec: NR band specification (e.g., "n78", "n28,n78", "n28+n78")
+ * lte_str: Optional LTE band hex mask. If NULL, defaults to MY_LTE_ALL.
+ */
+static int cmd_nr_lock(const char *nr_spec, const char *lte_str) {
     if (qmi_init() < 0) return 1;
 
     uint64_t lte_mask = lte_str ? strtoull(lte_str, NULL, 0) : MY_LTE_ALL;
 
     uint8_t nr_mask[NR5G_MASK_BYTES];
     memset(nr_mask, 0, sizeof(nr_mask));
-    nr5g_mask_set_band(nr_mask, MY_NR_N78);
+    parse_nr_bands(nr_spec, nr_mask);
+
+    if (nr5g_mask_is_zero(nr_mask)) {
+        fprintf(stderr, "Error: No valid NR bands in '%s'\n", nr_spec);
+        close(g_sock);
+        return 1;
+    }
 
     uint8_t tlv[256];
     int pos = 0;
@@ -481,8 +530,10 @@ static int cmd_band_lock_n78(const char *lte_str) {
     put_le16(tlv, &pos, 8);
     put_le64(tlv, &pos, lte_mask);
 
-    /* TLV 0x2C: NR5G n78 (need 16 bytes for bit 77) */
-    int nr_len = 16; /* 128 bits, covers n78 at bit 77 */
+    /* TLV 0x2C: NR5G bands — size dynamically based on highest set bit */
+    int nr_len = NR5G_MASK_BYTES;
+    while (nr_len > 8 && nr_mask[nr_len - 1] == 0) nr_len--;
+    nr_len = ((nr_len + 7) / 8) * 8; /* 8-byte align */
     put_u8(tlv, &pos, TLV_NR5G_BAND_PREF);
     put_le16(tlv, &pos, nr_len);
     memcpy(tlv + pos, nr_mask, nr_len);
@@ -505,7 +556,14 @@ static int cmd_band_lock_n78(const char *lte_str) {
                 f = 0;
             }
         }
-        printf("%s\"n78\"]}\n", f ? "" : ",");
+        for (int b = 1; b <= NR5G_MASK_BYTES * 8; b++) {
+            if (nr5g_mask_has_band(nr_mask, b)) {
+                if (!f) printf(",");
+                printf("\"n%d\"", b);
+                f = 0;
+            }
+        }
+        printf("]}\n");
     } else {
         printf("{\"result\":\"FAILED\"}\n");
     }
@@ -517,11 +575,11 @@ static int cmd_band_lock_n78(const char *lte_str) {
 static int cmd_unlock(void) {
     if (qmi_init() < 0) return 1;
 
-    uint8_t tlv[64];
+    uint8_t tlv[128];
     int pos = 0;
 
-    /* Mode: all technologies (from get_pref: 0x005c) */
-    uint16_t mode = 0x005c;
+    /* Mode: all technologies (LTE + NR5G + others) */
+    uint16_t mode = 0x005c | MODE_NR5G;
     put_u8(tlv, &pos, TLV_MODE_PREF);
     put_le16(tlv, &pos, 2);
     put_le16(tlv, &pos, mode);
@@ -530,6 +588,14 @@ static int cmd_unlock(void) {
     put_u8(tlv, &pos, TLV_LTE_BAND_PREF);
     put_le16(tlv, &pos, 8);
     put_le64(tlv, &pos, 0x0011e7ffffdf3fffULL);
+
+    /* NR5G: all bands unlocked (fill with 0xFF) */
+    uint8_t nr_all[16];
+    memset(nr_all, 0xFF, sizeof(nr_all));
+    put_u8(tlv, &pos, TLV_NR5G_BAND_PREF);
+    put_le16(tlv, &pos, 16);
+    memcpy(tlv + pos, nr_all, 16);
+    pos += 16;
 
     qmi_send(g_sock, &g_nas_addr, QMI_NAS_SET_SYS_SEL_PREF, tlv, pos);
     uint8_t resp[MSG_BUF_SIZE];
@@ -551,18 +617,22 @@ static void usage(void) {
         "  test                    Test QRTR connection to modem\n"
         "  cell_info               Get serving & neighbor cell info\n"
         "  get_pref                Get current band preferences\n"
-        "  band_lock <lte> [nr]    Lock to specific bands\n"
-        "  band_lock_n78 [lte]     Lock NR n78 + optional LTE bands\n"
-        "  unlock                  Unlock all bands\n\n"
-        "Band lock examples:\n"
+        "  band_lock <lte> [nr]    Lock LTE bands (+ optional NR bands)\n"
+        "  nr_lock <nr> [lte]      Lock NR bands (+ optional LTE mask)\n"
+        "  unlock                  Unlock all bands (LTE + NR)\n\n"
+        "NR band lock examples (NR Carrier Aggregation):\n"
+        "  nr_lock n78             Lock NR n78 only (+ all LTE)\n"
+        "  nr_lock n28+n78         Lock NR n28+n78 (NR-CA) + all LTE\n"
+        "  nr_lock n28,n78         Lock NR n28+n78 (alt syntax)\n"
+        "  nr_lock n28+n78 0x4     Lock NR n28+n78 + LTE B3 only\n"
+        "  nr_lock n41+n78         Lock NR n41+n78 (NR-CA)\n"
+        "  nr_lock n28+n41+n78     Lock 3x NR-CA\n\n"
+        "LTE band lock examples:\n"
         "  band_lock 0x4           Lock to LTE Band 3 only\n"
         "  band_lock 0x44          Lock to LTE B3 + B7\n"
         "  band_lock 0x8000004     Lock to LTE B3 + B28\n"
         "  band_lock 0x4 n78       Lock LTE B3 + NR n78\n"
-        "  band_lock 0x4 78        Lock LTE B3 + NR n78 (alt)\n"
-        "  band_lock 0x4 1,78      Lock LTE B3 + NR n1 + n78\n"
-        "  band_lock_n78           Lock NR n78 + ALL LTE bands\n"
-        "  band_lock_n78 0x4       Lock NR n78 + LTE B3 only\n\n"
+        "  band_lock 0x4 n28+n78   Lock LTE B3 + NR n28+n78\n\n"
         "Malaysia LTE band bitmasks:\n"
         "  B1  = 0x1              (2100 MHz)\n"
         "  B3  = 0x4              (1800 MHz)\n"
@@ -572,7 +642,9 @@ static void usage(void) {
         "  B40 = 0x8000000000     (2300 MHz)\n"
         "  ALL = 0x80000000C5\n\n"
         "Malaysia NR5G bands:\n"
-        "  n78 = 3500 MHz          (Primary 5G band)\n"
+        "  n28 = 700 MHz           (Low-band 5G, coverage)\n"
+        "  n41 = 2500 MHz          (Mid-band 5G, TDD)\n"
+        "  n78 = 3500 MHz          (Primary 5G, speed)\n"
     );
 }
 
@@ -591,8 +663,13 @@ int main(int argc, char **argv) {
         if (argc < 3) { fprintf(stderr, "Usage: qmi_tool band_lock <lte_mask> [nr_bands]\n"); return 1; }
         return cmd_band_lock(argv[2], argc > 3 ? argv[3] : NULL);
     }
+    if (strcmp(cmd, "nr_lock") == 0) {
+        if (argc < 3) { fprintf(stderr, "Usage: qmi_tool nr_lock <nr_bands> [lte_mask]\n"); return 1; }
+        return cmd_nr_lock(argv[2], argc > 3 ? argv[3] : NULL);
+    }
+    /* Backward compat: band_lock_n78 → nr_lock n78 */
     if (strcmp(cmd, "band_lock_n78") == 0) {
-        return cmd_band_lock_n78(argc > 2 ? argv[2] : NULL);
+        return cmd_nr_lock("n78", argc > 2 ? argv[2] : NULL);
     }
     if (strcmp(cmd, "unlock") == 0)
         return cmd_unlock();

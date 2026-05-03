@@ -365,11 +365,30 @@
             <div style="font-size:1rem;font-weight:600;color:#06b6d4;margin:20px 0 12px;text-transform:uppercase;letter-spacing:1px;">5G NR Bands</div>
 
             <div class="band-grid">
-                <button class="btn" onclick="lockBandN78(null, this)" style="grid-column: span 3; background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: #67e8f9;">📶 NR n78 <span style="font-size:0.75rem;opacity:0.7"> — 3500 MHz 5G</span></button>
-                <button class="btn" onclick="lockBandN78('0x4', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">B3 + n78</button>
-                <button class="btn" onclick="lockBandN78('0x5', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">B1+B3 + n78</button>
-                <button class="btn" onclick="lockBandN78('0x8000005', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">5G Anchor + n78</button>
-                <button class="btn" onclick="lockBandN78('0x8000005', this)" style="grid-column: span 3; background: rgba(13, 148, 136, 0.2); border-color: rgba(13, 148, 136, 0.4); color: #5eead4;">🚀 B1 + B3 + B28 + n78 (Full 5G)</button>
+                <!-- Single NR Bands -->
+                <button class="btn" onclick="lockNr('n28', null, this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: #67e8f9;">n28 <br><span style="font-size:0.75rem;opacity:0.7">700MHz</span></button>
+                <button class="btn" onclick="lockNr('n41', null, this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: #67e8f9;">n41 <br><span style="font-size:0.75rem;opacity:0.7">2500MHz</span></button>
+                <button class="btn" onclick="lockNr('n78', null, this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2); color: #67e8f9;">n78 <br><span style="font-size:0.75rem;opacity:0.7">3500MHz</span></button>
+            </div>
+
+            <!-- NR-CA Label -->
+            <div style="font-size:0.85rem;font-weight:500;color:#0891b2;margin:12px 0 8px;letter-spacing:0.5px;">NR CARRIER AGGREGATION</div>
+
+            <div class="band-grid">
+                <button class="btn" onclick="lockNr('n28+n78', null, this)" style="background: rgba(6, 182, 212, 0.12); border-color: rgba(6, 182, 212, 0.25);">n28 + n78</button>
+                <button class="btn" onclick="lockNr('n41+n78', null, this)" style="background: rgba(6, 182, 212, 0.12); border-color: rgba(6, 182, 212, 0.25);">n41 + n78</button>
+                <button class="btn" onclick="lockNr('n28+n41', null, this)" style="background: rgba(6, 182, 212, 0.12); border-color: rgba(6, 182, 212, 0.25);">n28 + n41</button>
+                <button class="btn" onclick="lockNr('n28+n41+n78', null, this)" style="grid-column: span 3; background: rgba(13, 148, 136, 0.2); border-color: rgba(13, 148, 136, 0.4); color: #5eead4;">🔥 n28 + n41 + n78 (Max 5G CA)</button>
+            </div>
+
+            <!-- LTE+NR Label -->
+            <div style="font-size:0.85rem;font-weight:500;color:#0891b2;margin:12px 0 8px;letter-spacing:0.5px;">LTE + NR COMBO</div>
+
+            <div class="band-grid">
+                <button class="btn" onclick="lockNr('n78', '0x4', this)" style="background: rgba(6, 100, 130, 0.15); border-color: rgba(6, 182, 212, 0.2);">B3 + n78</button>
+                <button class="btn" onclick="lockNr('n28+n78', '0x4', this)" style="background: rgba(6, 100, 130, 0.15); border-color: rgba(6, 182, 212, 0.2);">B3+n28+n78</button>
+                <button class="btn" onclick="lockNr('n28+n78', '0x5', this)" style="background: rgba(6, 100, 130, 0.15); border-color: rgba(6, 182, 212, 0.2);">B1+B3+n28+n78</button>
+                <button class="btn" onclick="lockNr('n28+n78', '0x8000005', this)" style="grid-column: span 3; background: rgba(17, 94, 89, 0.25); border-color: rgba(13, 148, 136, 0.4); color: #5eead4;">🚀 B1+B3+B28 + n28+n78 (Full 5G)</button>
                 
                 <button class="btn btn-danger" onclick="unlockAll(this)">🔓 UNLOCK ALL BANDS</button>
             </div>
@@ -506,7 +525,6 @@
         }
 
         async function lockBand(mask, btnElement) {
-            // Reset active states
             document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
             btnElement.innerHTML = `<span style="opacity:0.5">Locking...</span>`;
             
@@ -528,13 +546,13 @@
             fetchLockState();
         }
 
-        async function lockBandN78(lteMask, btnElement) {
+        async function lockNr(nrSpec, lteMask, btnElement) {
             document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
             btnElement.innerHTML = `<span style="opacity:0.5">Locking 5G...</span>`;
 
             try {
-                let url = `${API_BASE}/band_lock_n78`;
-                if (lteMask) url += `?lte_mask=${lteMask}`;
+                let url = `${API_BASE}/nr_lock?nr=${encodeURIComponent(nrSpec)}`;
+                if (lteMask) url += `&lte_mask=${lteMask}`;
                 const res = await fetch(url);
                 const data = await res.json();
 

@@ -78,20 +78,24 @@
 | B8   | 900 MHz   | `0x80`  | Indoor/rural |
 | B28  | 700 MHz   | `0x8000000` | 5G NSA anchor |
 | B40  | 2300 MHz  | `0x8000000000` | TDD |
-| **n78** | **3500 MHz** | **bit 77 (extended)** | **5G NR primary** |
+| **n28** | **700 MHz** | **NR bit 27** | **5G low-band (coverage)** |
+| **n41** | **2500 MHz** | **NR bit 40** | **5G mid-band (TDD)** |
+| **n78** | **3500 MHz** | **NR bit 77** | **5G primary (speed)** |
 
 ### Combo Presets
 
-| Combo | Bitmask | Use Case |
+| Combo | Command | Use Case |
 |-------|---------|----------|
-| B1+B3 | `0x5` | Balanced |
-| B3+B7 | `0x44` | Speed |
-| B3+B40 | `0x8000000004` | TDD Combo |
-| B1+B3+B7 | `0x45` | Max Speed 3CA |
-| B1+B3+B28 | `0x8000005` | 5G Anchor 3CA |
-| **B3+n78** | `band_lock 0x4 n78` | **LTE+5G Speed** |
-| **B1+B3+n78** | `band_lock 0x5 n78` | **5G Multi-band** |
-| **B1+B3+B28+n78** | `band_lock_n78 0x8000005` | **Full 5G Coverage** |
+| B1+B3 | `band_lock 0x5` | Balanced |
+| B3+B7 | `band_lock 0x44` | Speed |
+| B3+B40 | `band_lock 0x8000000004` | TDD Combo |
+| B1+B3+B7 | `band_lock 0x45` | Max Speed 3CA |
+| B1+B3+B28 | `band_lock 0x8000005` | 5G Anchor 3CA |
+| **n28+n78** | `nr_lock n28+n78` | **NR-CA (coverage+speed)** |
+| **n41+n78** | `nr_lock n41+n78` | **NR-CA (mid+speed)** |
+| **n28+n41+n78** | `nr_lock n28+n41+n78` | **Max 5G 3x NR-CA** |
+| **B3+n28+n78** | `nr_lock n28+n78 0x4` | **LTE+NR-CA** |
+| **B1+B3+B28+n28+n78** | `nr_lock n28+n78 0x8000005` | **Full 5G Coverage** |
 
 ## Building
 
@@ -155,14 +159,23 @@ su -c ./qmi_tool band_lock 0x4
 # Lock to B1 + B3 + B28 (5G Anchor combo)
 su -c ./qmi_tool band_lock 0x8000005
 
-# Lock to NR n78 only (5G)
-su -c ./qmi_tool band_lock_n78
+# Lock to NR n78 only (+ all LTE)
+su -c ./qmi_tool nr_lock n78
 
-# Lock to B3 + NR n78
+# Lock to NR n28 + n78 (NR Carrier Aggregation!)
+su -c ./qmi_tool nr_lock n28+n78
+
+# Lock to NR n28 + n41 + n78 (triple NR-CA)
+su -c ./qmi_tool nr_lock n28+n41+n78
+
+# Lock NR-CA + specific LTE bands
+su -c ./qmi_tool nr_lock n28+n78 0x8000005
+
+# Lock LTE B3 + NR n78
 su -c ./qmi_tool band_lock 0x4 n78
 
-# Lock to B1 + B3 + B28 + NR n78 (Full 5G)
-su -c ./qmi_tool band_lock_n78 0x8000005
+# Lock LTE B3 + NR n28+n78
+su -c ./qmi_tool band_lock 0x4 n28+n78
 
 # Check current band preferences
 su -c ./qmi_tool get_pref
@@ -170,7 +183,7 @@ su -c ./qmi_tool get_pref
 # Get serving cell & neighbor tower info
 su -c ./qmi_tool cell_info
 
-# Unlock all bands
+# Unlock all bands (LTE + NR)
 su -c ./qmi_tool unlock
 ```
 

@@ -145,7 +145,25 @@ class BandLockHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data).encode())
             return
             
+        elif path == '/api/nr_lock':
+            query = parse_qs(parsed_path.query)
+            nr_spec = query.get('nr', ['n78'])[0]
+            lte_mask = query.get('lte_mask', [''])[0]
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self._send_cors_headers()
+            self.end_headers()
+            
+            if lte_mask:
+                data = run_qmi(f"nr_lock {nr_spec} {lte_mask}")
+            else:
+                data = run_qmi(f"nr_lock {nr_spec}")
+            self.wfile.write(json.dumps(data).encode())
+            return
+            
         elif path == '/api/band_lock_n78':
+            # Backward compat: route to nr_lock n78
             query = parse_qs(parsed_path.query)
             lte_mask = query.get('lte_mask', [''])[0]
             
@@ -155,9 +173,9 @@ class BandLockHandler(BaseHTTPRequestHandler):
             self.end_headers()
             
             if lte_mask:
-                data = run_qmi(f"band_lock_n78 {lte_mask}")
+                data = run_qmi(f"nr_lock n78 {lte_mask}")
             else:
-                data = run_qmi("band_lock_n78")
+                data = run_qmi("nr_lock n78")
             self.wfile.write(json.dumps(data).encode())
             return
             

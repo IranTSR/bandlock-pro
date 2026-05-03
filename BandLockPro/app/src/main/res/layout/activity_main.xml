@@ -300,13 +300,89 @@
             android:layout_marginTop="8dp"
             android:layout_marginBottom="10dp"/>
 
-        <Button
-            android:id="@+id/btnLockN78"
+        <!-- Single NR Bands -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="📶 NR n78 (3500 MHz 5G)"
-            android:backgroundTint="#0e7490"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+            <Button
+                android:id="@+id/btnLockN28"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="n28\n700"
+                android:textSize="12sp"
+                android:backgroundTint="#0e7490"
+                android:layout_marginEnd="4dp"/>
+            <Button
+                android:id="@+id/btnLockN41"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="n41\n2500"
+                android:textSize="12sp"
+                android:backgroundTint="#0e7490"
+                android:layout_marginEnd="4dp"/>
+            <Button
+                android:id="@+id/btnLockN78"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="n78\n3500"
+                android:textSize="12sp"
+                android:backgroundTint="#0e7490"/>
+        </LinearLayout>
+
+        <!-- NR-CA Combos -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NR CARRIER AGGREGATION"
+            android:textColor="#0891b2"
+            android:textSize="12sp"
+            android:layout_marginBottom="6dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+            <Button
+                android:id="@+id/btnLockN28N78"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="n28+n78"
+                android:textSize="12sp"
+                android:backgroundTint="#155e75"
+                android:layout_marginEnd="4dp"/>
+            <Button
+                android:id="@+id/btnLockN41N78"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="n41+n78"
+                android:textSize="12sp"
+                android:backgroundTint="#155e75"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnLockN28N41N78"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔥 n28 + n41 + n78 (Max 5G CA)"
+            android:backgroundTint="#0d9488"
             android:layout_marginBottom="8dp"/>
+
+        <!-- LTE + NR Combos -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LTE + NR COMBO"
+            android:textColor="#0891b2"
+            android:textSize="12sp"
+            android:layout_marginBottom="6dp"/>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -320,24 +396,24 @@
                 android:layout_height="wrap_content"
                 android:text="B3 + n78"
                 android:textSize="12sp"
-                android:backgroundTint="#155e75"
+                android:backgroundTint="#164e63"
                 android:layout_marginEnd="4dp"/>
             <Button
-                android:id="@+id/btnLockB1B3N78"
+                android:id="@+id/btnLockB3N28N78"
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
-                android:text="B1+B3 + n78"
+                android:text="B3+n28+n78"
                 android:textSize="12sp"
-                android:backgroundTint="#155e75"/>
+                android:backgroundTint="#164e63"/>
         </LinearLayout>
 
         <Button
             android:id="@+id/btnLockB1B3B28N78"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🚀 B1 + B3 + B28 + n78 (Full 5G)"
-            android:backgroundTint="#0d9488"
+            android:text="🚀 B1+B3+B28 + n28+n78 (Full 5G)"
+            android:backgroundTint="#115e59"
             android:layout_marginBottom="8dp"/>
 
         <Button
