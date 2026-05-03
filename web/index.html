@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BandLock Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.5);
+            --success: #10b981;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeInUp 0.8s ease-out backwards;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        /* Signal Dashboard */
+        .signal-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .signal-main {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .signal-main span {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .ca-badge {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            display: none;
+        }
+
+        .ca-badge.active {
+            display: inline-block;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .metric {
+            background: rgba(0,0,0,0.2);
+            padding: 10px 5px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        /* Band Grid */
+        .band-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: 0.5s;
+        }
+
+        .btn:active::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .btn-danger {
+            grid-column: span 3;
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 16px;
+            font-size: 1.1rem;
+            margin-top: 10px;
+        }
+
+        /* Tower Cards */
+        .tower-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .tower-grid::-webkit-scrollbar {
+            width: 5px;
+        }
+        .tower-grid::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 5px;
+        }
+
+        .tower-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: left;
+            position: relative;
+        }
+
+        .tower-card .pci {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: 5px;
+        }
+
+        .tower-card .info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .tower-card .rsrp {
+            color: #fca5a5;
+            font-weight: 600;
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: 600;
+            transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+        }
+
+        #toast.show {
+            bottom: 30px;
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>BandLock Pro</h1>
+            <p style="color: var(--text-muted)">SD695 Advanced Network Tool</p>
+        </header>
+
+        <!-- Signal Dashboard -->
+        <div class="glass-card" style="animation-delay: 0.1s;">
+            <div class="card-title">
+                Connection Status <div class="live-indicator"></div>
+            </div>
+            
+            <div class="signal-display">
+                <div class="signal-main" id="p-rsrp">-- <span>dBm</span></div>
+                <div class="ca-badge" id="ca-badge">5G NSA / 4G+</div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric">
+                    <div class="metric-label">Band</div>
+                    <div class="metric-value" id="p-band">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">PCI</div>
+                    <div class="metric-value" id="p-pci">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">EARFCN</div>
+                    <div class="metric-value" id="p-earfcn">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">RSRQ</div>
+                    <div class="metric-value" id="p-rsrq">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Lock State -->
+        <div class="glass-card" style="animation-delay: 0.15s;">
+            <div class="card-title">
+                🔒 Current Lock State
+            </div>
+            <div id="lock-state" style="font-size: 1.3rem; font-weight: 700; color: #10b981;">Checking...</div>
+        </div>
+
+        <!-- Band Lock Controls -->
+        <div class="glass-card" style="animation-delay: 0.2s;">
+            <div class="card-title">Band Selection</div>
+            
+            <div class="band-grid">
+                <!-- Single Bands -->
+                <button class="btn" onclick="lockBand('0x1', this)">B1 <br><span style="font-size:0.75rem;opacity:0.7">2100MHz</span></button>
+                <button class="btn" onclick="lockBand('0x4', this)">B3 <br><span style="font-size:0.75rem;opacity:0.7">1800MHz</span></button>
+                <button class="btn" onclick="lockBand('0x40', this)">B7 <br><span style="font-size:0.75rem;opacity:0.7">2600MHz</span></button>
+                <button class="btn" onclick="lockBand('0x80', this)">B8 <br><span style="font-size:0.75rem;opacity:0.7">900MHz</span></button>
+                <button class="btn" onclick="lockBand('0x8000000', this)">B28 <br><span style="font-size:0.75rem;opacity:0.7">700MHz</span></button>
+                <button class="btn" onclick="lockBand('0x8000000000', this)">B40 <br><span style="font-size:0.75rem;opacity:0.7">2300MHz</span></button>
+                
+                <!-- Combo CA Bands -->
+                <button class="btn" onclick="lockBand('0x5', this)" style="background: rgba(59, 130, 246, 0.1);">B1 + B3</button>
+                <button class="btn" onclick="lockBand('0x44', this)" style="background: rgba(59, 130, 246, 0.1);">B3 + B7</button>
+                <button class="btn" onclick="lockBand('0x8000000004', this)" style="background: rgba(59, 130, 246, 0.1);">B3 + B40</button>
+                <button class="btn" onclick="lockBand('0x45', this)" style="grid-column: span 3; background: rgba(139, 92, 246, 0.2);">🔥 B1 + B3 + B7 (Max Speed)</button>
+                <button class="btn" onclick="lockBand('0x8000005', this)" style="grid-column: span 3; background: rgba(16, 185, 129, 0.2);">📡 B1 + B3 + B28 (5G Anchor Focus)</button>
+            </div>
+
+            <!-- 5G NR Section Label -->
+            <div style="font-size:1rem;font-weight:600;color:#06b6d4;margin:20px 0 12px;text-transform:uppercase;letter-spacing:1px;">5G NR Bands</div>
+
+            <div class="band-grid">
+                <button class="btn" onclick="lockBandN78(null, this)" style="grid-column: span 3; background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: #67e8f9;">📶 NR n78 <span style="font-size:0.75rem;opacity:0.7"> — 3500 MHz 5G</span></button>
+                <button class="btn" onclick="lockBandN78('0x4', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">B3 + n78</button>
+                <button class="btn" onclick="lockBandN78('0x5', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">B1+B3 + n78</button>
+                <button class="btn" onclick="lockBandN78('0x8000005', this)" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.2);">5G Anchor + n78</button>
+                <button class="btn" onclick="lockBandN78('0x8000005', this)" style="grid-column: span 3; background: rgba(13, 148, 136, 0.2); border-color: rgba(13, 148, 136, 0.4); color: #5eead4;">🚀 B1 + B3 + B28 + n78 (Full 5G)</button>
+                
+                <button class="btn btn-danger" onclick="unlockAll(this)">🔓 UNLOCK ALL BANDS</button>
+            </div>
+        </div>
+
+        <!-- Nearby Towers -->
+        <div class="glass-card" style="animation-delay: 0.3s;">
+            <div class="card-title">Nearby Towers <span>📡</span></div>
+            <div class="tower-grid" id="tower-container">
+                <div style="grid-column:span 2;text-align:center;color:#94a3b8;font-size:0.9rem;">Scanning...</div>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:10px;">
+                Note: PCI Locking is restricted by modem firmware. Use Band Lock.
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast">Ready</div>
+
+    <script>
+        const API_BASE = '/api';
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.color = isError ? 'var(--danger)' : 'var(--text-main)';
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // Decode LTE bitmask to band names
+        function decodeBands(hexStr) {
+            const ALL_BANDS = 0x0011e7ffffdf3fffn;
+            let mask;
+            try { mask = BigInt(hexStr); } catch { return 'Unknown'; }
+            if (mask === ALL_BANDS || mask === 0xFFFFFFFFFFFFFFFFn) return null; // unlocked
+            const bands = [];
+            for (let b = 1; b <= 64; b++) {
+                if (mask & (1n << BigInt(b - 1))) bands.push(`B${b}`);
+            }
+            return bands.length > 0 ? bands.join(' + ') : 'Unknown';
+        }
+
+        async function fetchLockState() {
+            try {
+                const res = await fetch(`${API_BASE}/get_pref`);
+                const data = await res.json();
+                const el = document.getElementById('lock-state');
+                if (data.preferences && data.preferences.lte_bands) {
+                    const lteLabel = decodeBands(data.preferences.lte_bands);
+                    const nrBands = data.preferences.nr_band_list || [];
+                    const hasNr = nrBands.length > 0;
+                    const lteUnlocked = lteLabel === null;
+
+                    if (lteUnlocked && !hasNr) {
+                        el.textContent = '🔓 UNLOCKED (All Bands)';
+                        el.style.color = '#10b981';
+                    } else {
+                        let parts = [];
+                        if (!lteUnlocked && lteLabel) parts.push(lteLabel);
+                        if (hasNr) parts.push(nrBands.join(' + '));
+                        el.textContent = '🔒 LOCKED: ' + parts.join(' + ');
+                        el.style.color = hasNr ? '#06b6d4' : '#fbbf24';
+                    }
+                } else {
+                    el.textContent = '⚠️ Unable to read state';
+                    el.style.color = '#94a3b8';
+                }
+            } catch (e) { console.error('get_pref error', e); }
+        }
+
+        async function fetchInfo() {
+            try {
+                const res = await fetch(`${API_BASE}/cell_info`);
+                const data = await res.json();
+                
+                document.getElementById('p-band').textContent = data.band ? `B${data.band}` : '--';
+                document.getElementById('p-pci').textContent = data.pci || '--';
+                document.getElementById('p-earfcn').textContent = data.earfcn || '--';
+                
+                if (data.rsrp && data.rsrp !== '--') {
+                    document.getElementById('p-rsrp').innerHTML = `${data.rsrp} <span>dBm</span>`;
+                } else {
+                    document.getElementById('p-rsrp').innerHTML = `-- <span>dBm</span>`;
+                }
+                document.getElementById('p-rsrq').textContent = data.rsrq || '--';
+
+                if (data.ca_active) {
+                    document.getElementById('ca-badge').classList.add('active');
+                    document.getElementById('ca-badge').textContent = '4G+ / 5G NSA Active';
+                } else {
+                    document.getElementById('ca-badge').classList.remove('active');
+                }
+
+                // Render Neighbors
+                const tc = document.getElementById('tower-container');
+                if (data.neighbors && data.neighbors.length > 0) {
+                    tc.innerHTML = '';
+                    const uniqueTowers = Array.from(new Set(data.neighbors.map(a => a.pci)))
+                        .map(pci => data.neighbors.find(a => a.pci === pci));
+
+                    uniqueTowers.forEach(n => {
+                        let div = document.createElement('div');
+                        div.className = 'tower-card';
+                        
+                        let bandLabel = n.earfcn;
+                        if (n.earfcn >= 0 && n.earfcn <= 599) bandLabel = "B1";
+                        else if (n.earfcn >= 1200 && n.earfcn <= 1949) bandLabel = "B3";
+                        else if (n.earfcn >= 2750 && n.earfcn <= 3449) bandLabel = "B7";
+                        else if (n.earfcn >= 3450 && n.earfcn <= 3799) bandLabel = "B8";
+                        else if (n.earfcn >= 9210 && n.earfcn <= 9659) bandLabel = "B28";
+                        else if (n.earfcn >= 38650 && n.earfcn <= 39649) bandLabel = "B40";
+                        // NR-ARFCN ranges
+                        else if (n.earfcn >= 620000 && n.earfcn <= 653333) bandLabel = "n78";
+                        else if (n.earfcn >= 386000 && n.earfcn <= 398000) bandLabel = "n41";
+
+                        div.innerHTML = `
+                            <div class="pci">PCI: ${n.pci}</div>
+                            <div class="info">
+                                <span>${bandLabel} (${n.earfcn})</span>
+                                <span class="rsrp">${n.rsrp} dBm</span>
+                            </div>
+                        `;
+                        tc.appendChild(div);
+                    });
+                } else {
+                    tc.innerHTML = `<div style="grid-column:span 2;text-align:center;color:#94a3b8;font-size:0.9rem;">No extra towers detected</div>`;
+                }
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function lockBand(mask, btnElement) {
+            // Reset active states
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            btnElement.innerHTML = `<span style="opacity:0.5">Locking...</span>`;
+            
+            try {
+                const res = await fetch(`${API_BASE}/band_lock?mask=${mask}`);
+                const data = await res.json();
+                
+                if (data.result === 'OK') {
+                    showToast(`Locked to ${data.locked_bands.join(', ')}`);
+                    btnElement.classList.add('active');
+                    btnElement.innerHTML = btnElement.getAttribute('data-orig') || btnElement.innerHTML.replace('<span style="opacity:0.5">Locking...</span>', 'Locked');
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown'}`, true);
+                }
+            } catch (e) {
+                showToast('Network error', true);
+            }
+            fetchInfo();
+            fetchLockState();
+        }
+
+        async function lockBandN78(lteMask, btnElement) {
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            btnElement.innerHTML = `<span style="opacity:0.5">Locking 5G...</span>`;
+
+            try {
+                let url = `${API_BASE}/band_lock_n78`;
+                if (lteMask) url += `?lte_mask=${lteMask}`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.result === 'OK') {
+                    showToast(`Locked to ${data.locked_bands.join(', ')}`);
+                    btnElement.classList.add('active');
+                    btnElement.innerHTML = btnElement.getAttribute('data-orig') || 'Locked';
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown'}`, true);
+                }
+            } catch (e) {
+                showToast('Network error', true);
+            }
+            fetchInfo();
+            fetchLockState();
+        }
+
+        async function unlockAll(btnElement) {
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            const orig = btnElement.innerHTML;
+            btnElement.innerHTML = 'Unlocking...';
+            
+            try {
+                const res = await fetch(`${API_BASE}/unlock`);
+                const data = await res.json();
+                
+                if (data.result === 'OK') {
+                    showToast(`Successfully unlocked all bands`);
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown'}`, true);
+                }
+            } catch (e) {
+                showToast('Network error', true);
+            }
+            btnElement.innerHTML = orig;
+            fetchInfo();
+        }
+
+        // Store original text for buttons
+        document.querySelectorAll('.btn').forEach(b => b.setAttribute('data-orig', b.innerHTML));
+
+        // Poll every 3 seconds
+        fetchInfo();
+        fetchLockState();
+        setInterval(fetchInfo, 3000);
+        setInterval(fetchLockState, 5000);
+    </script>
+</body>
+</html>

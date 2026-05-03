@@ -1,0 +1,52 @@
+# === Build Artifacts ===
+*.apk
+*.aab
+*.dex
+*.class
+*.jar
+*.so
+*.o
+
+# === Android / Gradle ===
+BandLockPro/.gradle/
+BandLockPro/.idea/
+BandLockPro/app/build/
+BandLockPro/app/.cxx/
+BandLockPro/build/
+BandLockPro/local.properties
+BandLockPro/captures/
+BandLockPro/.externalNativeBuild/
+BandLockPro/.cxx/
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Agent / AI Workspace ===
+
+
+# === Sensitive & Temp ===
+local.properties
+logcat.txt
+
+# === Internal Dev Notes (not for public) ===
+design_approaches.md
+final_analysis.md
+implementation_plan.md
+task.md
+
+# === Temp/Debug scripts ===
+native/t.c
+native/dump_tlv.c
+at_test.sh
+probe_device.sh
+*.bak
