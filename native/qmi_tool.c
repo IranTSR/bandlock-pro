@@ -532,7 +532,7 @@ static int cmd_nr_lock(const char *nr_spec, const char *lte_str) {
 
     /* TLV 0x2C: NR5G bands — size dynamically based on highest set bit */
     int nr_len = NR5G_MASK_BYTES;
-    while (nr_len > 8 && nr_mask[nr_len - 1] == 0) nr_len--;
+    while (nr_len > 16 && nr_mask[nr_len - 1] == 0) nr_len--;
     nr_len = ((nr_len + 7) / 8) * 8; /* 8-byte align */
     put_u8(tlv, &pos, TLV_NR5G_BAND_PREF);
     put_le16(tlv, &pos, nr_len);
@@ -588,14 +588,6 @@ static int cmd_unlock(void) {
     put_u8(tlv, &pos, TLV_LTE_BAND_PREF);
     put_le16(tlv, &pos, 8);
     put_le64(tlv, &pos, 0x0011e7ffffdf3fffULL);
-
-    /* NR5G: all bands unlocked (fill with 0xFF) */
-    uint8_t nr_all[16];
-    memset(nr_all, 0xFF, sizeof(nr_all));
-    put_u8(tlv, &pos, TLV_NR5G_BAND_PREF);
-    put_le16(tlv, &pos, 16);
-    memcpy(tlv + pos, nr_all, 16);
-    pos += 16;
 
     qmi_send(g_sock, &g_nas_addr, QMI_NAS_SET_SYS_SEL_PREF, tlv, pos);
     uint8_t resp[MSG_BUF_SIZE];
