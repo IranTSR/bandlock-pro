@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnModemInfo.setOnClickListener { fetchModemInfo() }
         binding.btnListMbns.setOnClickListener { fetchMbnList() }
         binding.btnScanFsMbns.setOnClickListener { fetchFsMbnList() }
+        binding.btnInspectFs.setOnClickListener { inspectModemFs() }
     }
 
     private fun setupRefresh() {
@@ -190,6 +191,24 @@ class MainActivity : AppCompatActivity() {
             } else {
                 binding.tvLogs.text = "❌ FS MBN Scan failed\nOUT: $out\nERR: $err"
             }
+        }
+    }
+
+    private fun inspectModemFs() {
+        binding.tvLogs.text = "🔎 Inspecting Modem FS & Props..."
+        val cmds = arrayOf(
+            "echo '--- PROPS ---'",
+            "getprop | grep -i mbn",
+            "getprop | grep -i mcfg",
+            "getprop | grep -i carrier",
+            "echo '--- FS ---'",
+            "ls -la /data/vendor/modem_config/",
+            "cat /data/vendor/modem_config/mcfg_sw/mbn_sw.txt",
+            "ls -la /data/vendor/modem_config/mcfg_sw/"
+        )
+        Shell.cmd(*cmds).submit { result ->
+            val out = result.out.joinToString("\n")
+            binding.tvLogs.text = "🔎 INSPECTION RESULTS:\n$out"
         }
     }
 
