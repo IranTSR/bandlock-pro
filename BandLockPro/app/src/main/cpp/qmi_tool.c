@@ -480,25 +480,122 @@ static int cmd_list_mbns(void) {
     close(qsock);
     return 0;
 }
+
 static int cmd_scan_fs_mbns(void) {
-    const char *path = "/vendor/firmware_mnt/image/modem_pr/mcfg/configs/mcfg_sw/";
-    printf("{\"searching_path\":\"%s\", \"mbn_files\":[\n", path);
+    const char *paths[] = {
+        "/vendor/firmware_mnt/image/modem_pr/mcfg/configs/mcfg_sw/",
+        "/vendor/modem_pr/mcfg/configs/mcfg_sw/",
+        "/data/vendor/modem_config/",
+        NULL
+    };
+    const char *filters[] = {"SEA", "Malaysia", "UMobile", "Maxis", "Digi", "Celcom", "YTL", "MY", NULL};
     
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "find %s -name '*.mbn'", path);
-    FILE *fp = popen(cmd, "r");
-    if (fp) {
+    printf("{\"scan_results\":[\n");
+    int first = 1;
+    for (int p = 0; paths[p]; p++) {
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "find %s -name '*.mbn' 2>/dev/null", paths[p]);
+        FILE *fp = popen(cmd, "r");
+        if (!fp) continue;
         char line[512];
-        int first = 1;
         while (fgets(line, sizeof(line), fp)) {
             line[strcspn(line, "\n")] = 0;
-            if (!first) printf(",\n");
-            printf("  \"%s\"", line);
-            first = 0;
+            int match = 0;
+            for (int f = 0; filters[f]; f++) {
+                if (strstr(line, filters[f])) { match = 1; break; }
+            }
+            if (match) {
+                if (!first) printf(",\n");
+                printf("  \"%s\"", line);
+                first = 0;
+            }
         }
         pclose(fp);
     }
     printf("\n]}\n");
+    return 0;
+}
+
+/* PDC service lookup */
+static int qrtr_lookup_pdc(int sock, struct sockaddr_qrtr *addr) {
+    struct qrtr_ctrl_pkt req = { .cmd = QRTR_TYPE_NEW_LOOKUP, .service = QMI_SERVICE_PDC, .instance = 0, .node = 0, .port = 0 };
+    struct sockaddr_qrtr sq = { .sq_family = AF_QIPCRTR, .sq_node = 1, .sq_port = QRTR_PORT_CTRL };
+    sendto(sock, &req, sizeof(req), 0, (void*)&sq, sizeof(sq));
+    struct pollfd pfd = { .fd = sock, .events = POLLIN };
+    while (poll(&pfd, 1, 1000) > 0) {
+        struct qrtr_ctrl_pkt resp;
+        if (recv(sock, &resp, sizeof(resp), 0) != sizeof(resp)) break;
+        if (resp.cmd == QRTR_TYPE_NEW_SERVER && resp.service == QMI_SERVICE_PDC) {
+            addr->sq_family = AF_QIPCRTR;
+            addr->sq_node = resp.node;
+            addr->sq_port = resp.port;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int cmd_pdc_list(void) {
+    int qsock = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+    struct sockaddr_qrtr addr;
+    if (qrtr_lookup_pdc(qsock, &addr) < 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"PDC service not found\"}\n");
+        close(qsock); return 1;
+    }
+    printf("{\"pdc_service\":\"FOUND\",\"node\":%d,\"port\":%d}\n", addr.sq_node, addr.sq_port);
+
+    /* Register for indications first */
+    uint8_t reg_payload[4];
+    int rpos = 0;
+    put_u8(reg_payload, &rpos, 0x10); put_le16(reg_payload, &rpos, 1); put_u8(reg_payload, &rpos, 0x01);
+    qmi_send(qsock, &addr, QMI_PDC_REGISTER, reg_payload, rpos);
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    qmi_recv(qsock, QMI_PDC_REGISTER, resp, &rlen, 1000);
+
+    /* Get Selected Config for slot 0 */
+    uint8_t sel_payload[16];
+    int spos = 0;
+    put_u8(sel_payload, &spos, 0x01); put_le16(sel_payload, &spos, 4);
+    put_le32(sel_payload, &spos, 0x00); // Config type: SW
+    put_u8(sel_payload, &spos, 0x10); put_le16(sel_payload, &spos, 4);
+    put_le32(sel_payload, &spos, 0x00); // Subscription ID: 0
+    qmi_send(qsock, &addr, QMI_PDC_GET_SELECTED_CONFIG, sel_payload, spos);
+    rlen = 0;
+    if (qmi_recv(qsock, QMI_PDC_GET_SELECTED_CONFIG, resp, &rlen, 2000) == 0) {
+        printf("{\"raw_pdc_selected\":\"");
+        for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
+        printf("\"}\n");
+        /* Try to parse config ID from TLV 0x11 */
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x11, &tlen);
+        if (t && tlen > 0) {
+            char config_id[256];
+            int len = tlen > 255 ? 255 : tlen;
+            memcpy(config_id, t, len);
+            config_id[len] = 0;
+            printf("{\"active_pdc_config\":\"%s\"}\n", config_id);
+        }
+    } else {
+        printf("{\"pdc_selected\":\"TIMEOUT\"}\n");
+    }
+
+    /* List configs */
+    uint8_t list_payload[8];
+    int lpos = 0;
+    put_u8(list_payload, &lpos, 0x01); put_le16(list_payload, &lpos, 4);
+    put_le32(list_payload, &lpos, 0x00); // Config type: SW
+    qmi_send(qsock, &addr, QMI_PDC_LIST_CONFIGS, list_payload, lpos);
+    rlen = 0;
+    if (qmi_recv(qsock, QMI_PDC_LIST_CONFIGS, resp, &rlen, 3000) == 0) {
+        printf("{\"raw_pdc_list\":\"");
+        for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
+        printf("\"}\n");
+    } else {
+        printf("{\"pdc_list\":\"TIMEOUT\"}\n");
+    }
+
+    close(qsock);
     return 0;
 }
 static int parse_nr_band_token(const char *tok) {
@@ -830,7 +927,9 @@ int main(int argc, char **argv) {
     if (strcmp(cmd, "modem_info") == 0)
         return cmd_modem_info();
     if (strcmp(cmd, "list_mbns") == 0)
-        return cmd_list_mbns();
+        return cmd_pdc_list();
+    if (strcmp(cmd, "pdc_list") == 0)
+        return cmd_pdc_list();
     if (strcmp(cmd, "scan_fs_mbns") == 0)
         return cmd_scan_fs_mbns();
     if (strcmp(cmd, "get_pref") == 0)

@@ -148,6 +148,16 @@ static inline int nr5g_mask_is_zero(const uint8_t *mask) {
 #define QMI_DMS_GET_MCFG_CONFIG_ID       0x0042
 #define QMI_DMS_SET_CONFIG_STATE         0x0043
 
+/* QMI PDC — Platform Device Configuration (the REAL MBN manager) */
+#define QMI_SERVICE_PDC               0x24
+#define QMI_PDC_REGISTER              0x0020
+#define QMI_PDC_CONFIG_CHANGE         0x0021
+#define QMI_PDC_GET_SELECTED_CONFIG   0x0022
+#define QMI_PDC_SET_SELECTED_CONFIG   0x0023
+#define QMI_PDC_LIST_CONFIGS          0x0024
+#define QMI_PDC_ACTIVATE_CONFIG       0x0027
+#define QMI_PDC_DEACTIVATE_CONFIG     0x002B
+
 /* Original working combination from user's get_pref: B1, B3, B7, B8, B20, B28, B38, B40, B41, etc. */
 #define MY_LTE_ALL  0x0011e7ffffdf3fffULL
 
