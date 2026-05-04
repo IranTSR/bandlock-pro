@@ -400,7 +400,7 @@ static int cmd_modem_info(void) {
     qmi_send(qsock, &addr, QMI_DMS_GET_DEVICE_CAPABILITIES, NULL, 0);
     rlen = 0;
     int has_5g = 0;
-    if (qmi_recv(qsock, QMI_DMS_GET_DEVICE_CAPABILITIES, resp, &rlen, 2000) == 0) {
+    if (qmi_recv(qsock, QMI_DMS_GET_DEVICE_CAPABILITIES, resp, &rlen, 1000) == 0) {
         printf("{\"raw_capabilities\":\"");
         for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
         printf("\"}\n");
@@ -412,8 +412,23 @@ static int cmd_modem_info(void) {
         }
     }
 
+    /* Get Active MBN ID (0x0042) */
+    uint8_t mbn_id[256] = "Unknown";
+    uint8_t payload_mbn[1] = { 0x01 }; // SW Config
+    qmi_send(qsock, &addr, QMI_DMS_GET_MCFG_CONFIG_ID, payload_mbn, 1);
+    if (qmi_recv(qsock, QMI_DMS_GET_MCFG_CONFIG_ID, resp, &rlen, 1000) == 0) {
+        uint16_t tlen;
+        const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen); // Config ID
+        if (t && tlen > 2) {
+            int name_len = t[1];
+            if (name_len > 255) name_len = 255;
+            memcpy(mbn_id, t + 2, name_len);
+            mbn_id[name_len] = 0;
+        }
+    }
+
     printf("{\"active_mbn\":\"%s\", \"nr5g_supported\":%s}\n", 
-           mbn_name, has_5g ? "true" : "false");
+           mbn_id, has_5g ? "true" : "false");
     close(qsock);
     return 0;
 }
