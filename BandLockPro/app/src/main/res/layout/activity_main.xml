@@ -150,6 +150,16 @@
             android:backgroundTint="#475569"
             android:textColor="#f8fafc"
             android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <Button
+            android:id="@+id/btnScanFsMbns"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📂 SCAN MBN FILESYSTEM"
+            android:backgroundTint="#475569"
+            android:textColor="#f8fafc"
+            android:textStyle="bold"
             android:layout_marginBottom="16dp"/>
 
         <!-- Logs -->

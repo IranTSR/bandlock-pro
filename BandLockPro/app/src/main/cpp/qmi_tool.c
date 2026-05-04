@@ -476,10 +476,29 @@ static int cmd_list_mbns(void) {
             printf("%s{\"name\":\"%s\",\"active\":%s}", i > 0 ? "," : "", name, active ? "true" : "false");
         }
         printf("]}\n");
-    } else {
-        printf("{\"result\":\"FAILED\",\"error\":\"No MBN TLV 0x01 found\"}\n");
     }
     close(qsock);
+    return 0;
+}
+static int cmd_scan_fs_mbns(void) {
+    const char *path = "/vendor/firmware_mnt/image/modem_pr/mcfg/configs/mcfg_sw/";
+    printf("{\"searching_path\":\"%s\", \"mbn_files\":[\n", path);
+    
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "find %s -name '*.mbn'", path);
+    FILE *fp = popen(cmd, "r");
+    if (fp) {
+        char line[512];
+        int first = 1;
+        while (fgets(line, sizeof(line), fp)) {
+            line[strcspn(line, "\n")] = 0;
+            if (!first) printf(",\n");
+            printf("  \"%s\"", line);
+            first = 0;
+        }
+        pclose(fp);
+    }
+    printf("\n]}\n");
     return 0;
 }
 static int parse_nr_band_token(const char *tok) {
@@ -812,6 +831,8 @@ int main(int argc, char **argv) {
         return cmd_modem_info();
     if (strcmp(cmd, "list_mbns") == 0)
         return cmd_list_mbns();
+    if (strcmp(cmd, "scan_fs_mbns") == 0)
+        return cmd_scan_fs_mbns();
     if (strcmp(cmd, "get_pref") == 0)
         return cmd_get_pref();
     if (strcmp(cmd, "get_nr_pref") == 0)

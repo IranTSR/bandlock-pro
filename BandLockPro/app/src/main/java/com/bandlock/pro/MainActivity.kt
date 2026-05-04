@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnUnlock.setOnClickListener { unlockAll() }
         binding.btnModemInfo.setOnClickListener { fetchModemInfo() }
         binding.btnListMbns.setOnClickListener { fetchMbnList() }
+        binding.btnScanFsMbns.setOnClickListener { fetchFsMbnList() }
     }
 
     private fun setupRefresh() {
@@ -166,14 +167,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchMbnList() {
         if (qmiToolPath.isEmpty()) return
-        binding.tvLogs.text = "📜 Scanning MBN Profiles..."
+        binding.tvLogs.text = "📜 Scanning MBN Profiles (QMI)..."
         Shell.cmd("$qmiToolPath list_mbns").submit { result ->
             val out = result.out.joinToString("\n")
             val err = result.err.joinToString("\n")
             if (result.isSuccess) {
-                binding.tvLogs.text = "📁 STORED MBNs:\n$out"
+                binding.tvLogs.text = "📁 STORED MBNs (QMI):\n$out"
             } else {
-                binding.tvLogs.text = "❌ MBN Scan failed\nOUT: $out\nERR: $err"
+                binding.tvLogs.text = "❌ QMI MBN Scan failed\nOUT: $out\nERR: $err"
+            }
+        }
+    }
+
+    private fun fetchFsMbnList() {
+        if (qmiToolPath.isEmpty()) return
+        binding.tvLogs.text = "📂 Scanning MBN Filesystem (Root)..."
+        Shell.cmd("$qmiToolPath scan_fs_mbns").submit { result ->
+            val out = result.out.joinToString("\n")
+            val err = result.err.joinToString("\n")
+            if (result.isSuccess) {
+                binding.tvLogs.text = "📁 FILESYSTEM MBNs:\n$out"
+            } else {
+                binding.tvLogs.text = "❌ FS MBN Scan failed\nOUT: $out\nERR: $err"
             }
         }
     }
