@@ -104,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnListMbns.setOnClickListener { fetchMbnList() }
         binding.btnScanFsMbns.setOnClickListener { fetchFsMbnList() }
         binding.btnInspectFs.setOnClickListener { inspectModemFs() }
+        binding.btnForceMbn.setOnClickListener { forceUMobileMbn() }
     }
 
     private fun setupRefresh() {
@@ -209,6 +210,38 @@ class MainActivity : AppCompatActivity() {
         Shell.cmd(*cmds).submit { result ->
             val out = result.out.joinToString("\n")
             binding.tvLogs.text = "🔎 INSPECTION RESULTS:\n$out"
+        }
+    }
+
+    private fun forceUMobileMbn() {
+        binding.tvLogs.text = "🚀 Forcing UMobile MBN via Filesystem..."
+        val sourceMbn = "/vendor/firmware_mnt/image/modem_pr/mcfg/configs/mcfg_sw/generic/SEA/UMobile/Commercial/Malaysia/mcfg_sw.mbn"
+        val targetDir = "/data/vendor/modem_config/mcfg_sw"
+        
+        val cmds = arrayOf(
+            "mkdir -p $targetDir",
+            "cp $sourceMbn $targetDir/mcfg_sw.mbn",
+            "echo 'mcfg_sw/mcfg_sw.mbn' > $targetDir/mbn_sw.txt",
+            "chown -R radio:radio /data/vendor/modem_config",
+            "chmod -R 755 /data/vendor/modem_config",
+            "chmod 644 $targetDir/mcfg_sw.mbn",
+            "chmod 644 $targetDir/mbn_sw.txt",
+            "setprop persist.vendor.radio.sw_mbn_update 1",
+            "setprop persist.vendor.radio.custom_mbn 1",
+            "echo 'Restarting Radio Daemon...'",
+            "setprop ctl.restart vendor.ril-daemon",
+            "sleep 2",
+            "echo 'Done. Please toggle Airplane Mode or Reboot if signal drops.'"
+        )
+        
+        Shell.cmd(*cmds).submit { result ->
+            val out = result.out.joinToString("\n")
+            val err = result.err.joinToString("\n")
+            if (result.isSuccess) {
+                binding.tvLogs.text = "✅ MBN FORCED SUCCESSFULLY!\n$out"
+            } else {
+                binding.tvLogs.text = "❌ FAILED TO FORCE MBN\nOUT: $out\nERR: $err"
+            }
         }
     }
 
