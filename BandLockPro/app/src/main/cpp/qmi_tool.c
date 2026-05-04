@@ -431,25 +431,38 @@ static int cmd_list_mbns(void) {
     qmi_send(qsock, &addr, QMI_DMS_LIST_CONFIGS, payload, 1);
     uint8_t resp[MSG_BUF_SIZE];
     int rlen = 0;
-    if (qmi_recv(qsock, QMI_DMS_LIST_CONFIGS, resp, &rlen, 3000) == 0) {
-        uint16_t tlen;
-        const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen); // Config List
-        if (t && tlen > 0) {
-            int num_configs = t[0];
-            printf("{\"mbn_list\":[");
-            const uint8_t *p = t + 1;
-            for (int i = 0; i < num_configs; i++) {
-                int name_len = *p++;
-                char name[256];
-                if (name_len > 255) name_len = 255;
-                memcpy(name, p, name_len);
-                name[name_len] = 0;
-                p += name_len;
-                uint8_t active = *p++;
-                printf("%s{\"name\":\"%s\",\"active\":%s}", i > 0 ? "," : "", name, active ? "true" : "false");
-            }
-            printf("]}\n");
+    int rc = qmi_recv(qsock, QMI_DMS_LIST_CONFIGS, resp, &rlen, 3000);
+    
+    if (rc != 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"TIMEOUT\"}\n");
+        close(qsock); return 1;
+    }
+
+    printf("{\"raw_mbn_data\":\"");
+    for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
+    printf("\"}\n");
+
+    uint16_t tlen;
+    const uint8_t *t = find_tlv(resp, rlen, 0x01, &tlen); // Config List
+    if (t && tlen > 0) {
+        int num_configs = t[0];
+        printf("{\"mbn_list\":[");
+        const uint8_t *p = t + 1;
+        for (int i = 0; i < num_configs; i++) {
+            if (p >= t + tlen) break;
+            int name_len = *p++;
+            char name[256];
+            if (name_len > 255) name_len = 255;
+            memcpy(name, p, name_len);
+            name[name_len] = 0;
+            p += name_len;
+            if (p >= t + tlen) break;
+            uint8_t active = *p++;
+            printf("%s{\"name\":\"%s\",\"active\":%s}", i > 0 ? "," : "", name, active ? "true" : "false");
         }
+        printf("]}\n");
+    } else {
+        printf("{\"result\":\"FAILED\",\"error\":\"No MBN TLV 0x01 found\"}\n");
     }
     close(qsock);
     return 0;
@@ -660,15 +673,17 @@ static int cmd_nr_lock(const char *nr_spec, const char *lte_str) {
         
         uint8_t resp[MSG_BUF_SIZE];
         int rlen = 0;
-        int rc = qmi_recv(s, QMI_NAS_SET_SYS_SEL_PREF, resp, &rlen, 2000);
+        int rc = qmi_recv(s, QMI_NAS_SET_SYS_SEL_PREF, resp, &rlen, 1000); // Shortened to 1s
         
         uint16_t qmi_err = 0;
-        if (rc != 0) {
+        if (rc == 0) { // Success receiving response
             uint16_t tlen;
             const uint8_t *t = find_tlv(resp, rlen, 0x02, &tlen);
-            if (t && tlen >= 4) qmi_err = get_le16(t + 2);
-        } else {
-            success = 1;
+            if (t && tlen >= 4) {
+                uint16_t res = get_le16(t);
+                qmi_err = get_le16(t + 2);
+                if (res == 0) success = 1;
+            }
         }
 
         if (i > 0) printf(",\n");
