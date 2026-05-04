@@ -192,6 +192,40 @@ static int qmi_recv(int sock, uint16_t exp_msg_id,
     }
 }
 
+static long long current_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int qmi_recv_ind(int sock, uint16_t exp_msg_id, uint8_t *tlv_out, int *tlv_len_out, int timeout_ms) {
+    long long end_ms = current_time_ms() + timeout_ms;
+    while (1) {
+        long long rem_ms = end_ms - current_time_ms();
+        if (rem_ms <= 0) return -1;
+        struct pollfd pfd = { .fd = sock, .events = POLLIN };
+        if (poll(&pfd, 1, rem_ms) <= 0) return -1;
+        
+        uint8_t buf[MSG_BUF_SIZE];
+        int n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
+        if (n < 7) continue;
+
+        uint8_t type = buf[0];
+        uint16_t msg_id = get_le16(buf + 3);
+        uint16_t msg_len = get_le16(buf + 5);
+
+        if (type != QMI_INDICATION || msg_id != exp_msg_id) continue;
+
+        const uint8_t *data = buf + 7;
+        if (tlv_out && tlv_len_out) {
+            int copy = (msg_len < MSG_BUF_SIZE) ? msg_len : MSG_BUF_SIZE;
+            memcpy(tlv_out, data, copy);
+            *tlv_len_out = copy;
+        }
+        return 0;
+    }
+}
+
 static int qmi_init(void) {
     g_sock = qrtr_open();
     if (g_sock < 0) return -1;
@@ -586,18 +620,70 @@ static int cmd_pdc_list(void) {
     put_u8(list_payload, &lpos, 0x01); put_le16(list_payload, &lpos, 4);
     put_le32(list_payload, &lpos, 0x00); // Config type: SW
     qmi_send(qsock, &addr, QMI_PDC_LIST_CONFIGS, list_payload, lpos);
+    
+    /* Wait for response first */
+    qmi_recv(qsock, QMI_PDC_LIST_CONFIGS, resp, &rlen, 1000);
+    
+    /* Now wait for INDICATION */
     rlen = 0;
-    if (qmi_recv(qsock, QMI_PDC_LIST_CONFIGS, resp, &rlen, 3000) == 0) {
-        printf("{\"raw_pdc_list\":\"");
+    if (qmi_recv_ind(qsock, QMI_PDC_LIST_CONFIGS, resp, &rlen, 3000) == 0) {
+        printf("{\"raw_pdc_list_ind\":\"");
         for (int i = 0; i < rlen; i++) printf("%02x", resp[i]);
         printf("\"}\n");
     } else {
-        printf("{\"pdc_list\":\"TIMEOUT\"}\n");
+        printf("{\"pdc_list_ind\":\"TIMEOUT\"}\n");
     }
 
     close(qsock);
     return 0;
 }
+
+static int cmd_force_mbn(const char *config_id) {
+    if (!config_id) return 1;
+    int qsock = socket(AF_QIPCRTR, SOCK_DGRAM, 0);
+    struct sockaddr_qrtr addr;
+    if (qrtr_lookup_pdc(qsock, &addr) < 0) {
+        printf("{\"result\":\"FAILED\",\"error\":\"PDC service not found\"}\n");
+        close(qsock); return 1;
+    }
+
+    uint8_t resp[MSG_BUF_SIZE];
+    int rlen = 0;
+    
+    printf("{\"action\":\"force_mbn\", \"target_id\":\"%s\", \"steps\":[\n", config_id);
+    
+    /* 1. Set Selected Config */
+    uint8_t set_payload[256];
+    int spos = 0;
+    int id_len = strlen(config_id);
+    put_u8(set_payload, &spos, 0x01); put_le16(set_payload, &spos, id_len);
+    memcpy(set_payload + spos, config_id, id_len); spos += id_len;
+    put_u8(set_payload, &spos, 0x10); put_le16(set_payload, &spos, 4);
+    put_le32(set_payload, &spos, 0x00); // Config type: SW
+    put_u8(set_payload, &spos, 0x11); put_le16(set_payload, &spos, 4);
+    put_le32(set_payload, &spos, 0x00); // Subscription ID: 0
+    
+    qmi_send(qsock, &addr, QMI_PDC_SET_SELECTED_CONFIG, set_payload, spos);
+    int set_ok = (qmi_recv(qsock, QMI_PDC_SET_SELECTED_CONFIG, resp, &rlen, 2000) == 0);
+    printf("  {\"step\":\"SET_SELECTED_CONFIG\", \"status\":\"%s\"},\n", set_ok ? "SUCCESS" : "FAILED");
+    
+    /* 2. Activate Config */
+    uint8_t act_payload[16];
+    int apos = 0;
+    put_u8(act_payload, &apos, 0x01); put_le16(act_payload, &apos, 4);
+    put_le32(act_payload, &apos, 0x00); // Config type: SW
+    put_u8(act_payload, &apos, 0x10); put_le16(act_payload, &apos, 4);
+    put_le32(act_payload, &apos, 0x00); // Subscription ID: 0
+    
+    qmi_send(qsock, &addr, QMI_PDC_ACTIVATE_CONFIG, act_payload, apos);
+    int act_ok = (qmi_recv(qsock, QMI_PDC_ACTIVATE_CONFIG, resp, &rlen, 3000) == 0);
+    printf("  {\"step\":\"ACTIVATE_CONFIG\", \"status\":\"%s\"}\n", act_ok ? "SUCCESS" : "FAILED");
+    
+    printf("]}\n");
+    close(qsock);
+    return (set_ok && act_ok) ? 0 : 1;
+}
+
 static int parse_nr_band_token(const char *tok) {
     const char *numstr = tok;
     /* Strip leading 'n' or 'N' prefix if present */
@@ -930,6 +1016,10 @@ int main(int argc, char **argv) {
         return cmd_pdc_list();
     if (strcmp(cmd, "pdc_list") == 0)
         return cmd_pdc_list();
+    if (strcmp(cmd, "force_mbn") == 0) {
+        if (argc < 3) { fprintf(stderr, "Usage: qmi_tool force_mbn <config_id>\n"); return 1; }
+        return cmd_force_mbn(argv[2]);
+    }
     if (strcmp(cmd, "scan_fs_mbns") == 0)
         return cmd_scan_fs_mbns();
     if (strcmp(cmd, "get_pref") == 0)
