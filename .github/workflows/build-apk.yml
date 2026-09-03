@@ -24,9 +24,13 @@ jobs:
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: "8.7"
 
     - name: Generate Gradle Wrapper
-      run: cd BandLockPro && gradle wrapper
+      run: |
+        cd BandLockPro
+        gradle wrapper --gradle-version 8.7
 
     - name: Build with Gradle
       run: cd BandLockPro && ./gradlew assembleDebug
