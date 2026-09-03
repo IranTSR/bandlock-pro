@@ -1,39 +1,35 @@
-name: Build BandLock Pro APK
+name: Build Android APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # این گزینه باعث می‌شود دکمه‌ای برای شروع دستی بیلد ظاهر شود
+  push:
+    branches: [ "master", "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
-      - name: Install NDK
-        run: sdkmanager "ndk;27.2.12479018"
+    - name: Grant execute permission for gradlew
+      run: cd BandLockPro && chmod +x gradlew
 
-      - name: Make gradlew executable
-        working-directory: BandLockPro
-        run: chmod +x gradlew
+    - name: Build with Gradle
+      run: cd BandLockPro && ./gradlew assembleDebug
 
-      - name: Build APK
-        working-directory: BandLockPro
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: BandLockPro-debug
-          path: BandLockPro/app/build/outputs/apk/debug/*.apk
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: BandLockPro-APK
+        path: BandLockPro/app/build/outputs/apk/debug/app-debug.apk
