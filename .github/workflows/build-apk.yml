@@ -1,7 +1,7 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch: # این گزینه باعث می‌شود دکمه‌ای برای شروع دستی بیلد ظاهر شود
+  workflow_dispatch:
   push:
     branches: [ "master", "main" ]
 
@@ -22,8 +22,11 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Grant execute permission for gradlew
-      run: cd BandLockPro && chmod +x gradlew
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Generate Gradle Wrapper
+      run: cd BandLockPro && gradle wrapper
 
     - name: Build with Gradle
       run: cd BandLockPro && ./gradlew assembleDebug
